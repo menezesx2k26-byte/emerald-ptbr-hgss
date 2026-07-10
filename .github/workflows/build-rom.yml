@@ -26,13 +26,13 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 120
 
     steps:
       - name: Checkout integration scripts
         uses: actions/checkout@v4
 
-      - name: Install build dependencies
+      - name: Install build and translation dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -42,24 +42,44 @@ jobs:
             libpng-dev \
             python3-pil \
             git
+          python3 -m pip install --upgrade pip
+          python3 -m pip install \
+            torch \
+            transformers==4.49.0 \
+            sentencepiece \
+            sacremoses
 
       - name: Checkout pinned PT-BR source
         run: |
           git clone --filter=blob:none https://github.com/lucmsilva651/esmeralda-ptbr.git game
           git -C game checkout 16899178c5d9b198b961c3e38389ccccbdff7836
 
-      - name: Checkout only HGSS sprite assets
+      - name: Checkout only HGSS Pokémon sprite assets
         run: |
           git clone --depth 1 --filter=blob:none --sparse https://github.com/PokeAPI/sprites.git pokeapi-sprites
           git -C pokeapi-sprites sparse-checkout set sprites/pokemon/versions/generation-iv/heartgold-soulsilver
           test -f pokeapi-sprites/sprites/pokemon/versions/generation-iv/heartgold-soulsilver/1.png
           test -f pokeapi-sprites/sprites/pokemon/versions/generation-iv/heartgold-soulsilver/back/shiny/386.png
 
-      - name: Apply HGSS visual overhaul
+      - name: Checkout converted human overworld assets
+        run: |
+          git clone --depth 1 --filter=blob:none --sparse https://github.com/TeamAquasHideout/Team-Aquas-Asset-Repo.git team-aqua-assets
+          git -C team-aqua-assets sparse-checkout set "Overworld Trainer Sprites/RavePossum/Poffin-Case-Overworlds-Converted"
+          test -f "team-aqua-assets/Overworld Trainer Sprites/RavePossum/Poffin-Case-Overworlds-Converted/brendan/walking.png"
+          test -f "team-aqua-assets/Overworld Trainer Sprites/RavePossum/Poffin-Case-Overworlds-Converted/youngster.png"
+
+      - name: Apply HGSS visual overhaul v1.3
         run: |
           python3 scripts/apply_overhaul.py \
             --project game \
-            --sprites-root pokeapi-sprites/sprites/pokemon/versions/generation-iv/heartgold-soulsilver
+            --sprites-root pokeapi-sprites/sprites/pokemon/versions/generation-iv/heartgold-soulsilver \
+            --overworlds-root "team-aqua-assets/Overworld Trainer Sprites/RavePossum/Poffin-Case-Overworlds-Converted"
+
+      - name: Normalize untranslated English text to PT-BR
+        run: |
+          python3 scripts/translate_ptbr.py \
+            --project game \
+            --report translation_consistency_v1.3.json
 
       - name: Build and install agbcc
         run: |
@@ -79,16 +99,19 @@ jobs:
       - name: Prepare artifact
         run: |
           test -f game/pokeemerald_modern.gba
-          cp game/pokeemerald_modern.gba Emerald_PTBR_HGSS_v1.1.gba
-          sha256sum Emerald_PTBR_HGSS_v1.1.gba | tee SHA256SUMS.txt
-          ls -lh Emerald_PTBR_HGSS_v1.1.gba
+          cp game/pokeemerald_modern.gba Emerald_PTBR_HGSS_v1.3.gba
+          sha256sum Emerald_PTBR_HGSS_v1.3.gba | tee SHA256SUMS.txt
+          cp game/overworld_import_v1.3.json .
+          ls -lh Emerald_PTBR_HGSS_v1.3.gba
 
       - name: Upload playable build
         uses: actions/upload-artifact@v4
         with:
-          name: Emerald-PTBR-HGSS-v1.1
+          name: Emerald-PTBR-HGSS-v1.3
           path: |
-            Emerald_PTBR_HGSS_v1.1.gba
+            Emerald_PTBR_HGSS_v1.3.gba
             SHA256SUMS.txt
+            overworld_import_v1.3.json
+            translation_consistency_v1.3.json
           if-no-files-found: error
           retention-days: 30
