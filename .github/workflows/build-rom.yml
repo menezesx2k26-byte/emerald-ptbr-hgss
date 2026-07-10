@@ -80,7 +80,7 @@ jobs:
         continue-on-error: true
         run: |
           set -o pipefail
-          python3 scripts/translate_ptbr.py \
+          python3 scripts/translate_ptbr_romance.py \
             --project game \
             --report translation_consistency_v1.3.json \
             2>&1 | tee translation_v1.3.log
