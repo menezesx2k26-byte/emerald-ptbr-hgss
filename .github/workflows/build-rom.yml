@@ -76,10 +76,29 @@ jobs:
             --overworlds-root "team-aqua-assets/Overworld Trainer Sprites/RavePossum/Poffin-Case-Overworlds-Converted"
 
       - name: Normalize untranslated English text to PT-BR
+        id: translation
+        continue-on-error: true
         run: |
+          set -o pipefail
           python3 scripts/translate_ptbr.py \
             --project game \
-            --report translation_consistency_v1.3.json
+            --report translation_consistency_v1.3.json \
+            2>&1 | tee translation_v1.3.log
+
+      - name: Upload translation diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: translation-diagnostics-v1.3
+          path: |
+            translation_v1.3.log
+            translation_consistency_v1.3.json
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Stop after translation failure
+        if: steps.translation.outcome != 'success'
+        run: exit 1
 
       - name: Build and install agbcc
         run: |
