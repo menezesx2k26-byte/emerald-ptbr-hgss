@@ -8,12 +8,19 @@ on:
       - "scripts/**"
       - ".github/workflows/build-rom.yml"
       - "README.md"
+  pull_request:
+    branches: [main]
+    paths:
+      - "scripts/**"
+      - ".github/workflows/build-rom.yml"
+      - "README.md"
+      - "BUILD_TRIGGER.md"
 
 permissions:
   contents: read
 
 concurrency:
-  group: emerald-ptbr-hgss-build
+  group: emerald-ptbr-hgss-build-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
