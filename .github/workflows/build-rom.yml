@@ -64,9 +64,9 @@ jobs:
       - name: Build and install agbcc
         run: |
           git clone --depth 1 https://github.com/pret/agbcc.git agbcc
+          cd agbcc
           ./build.sh
           ./install.sh ../game
-        working-directory: agbcc
 
       - name: Build ROM
         env:
