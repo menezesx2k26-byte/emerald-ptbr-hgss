@@ -1,0 +1,87 @@
+name: Build Emerald PT-BR HGSS
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "scripts/**"
+      - ".github/workflows/build-rom.yml"
+      - "README.md"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: emerald-ptbr-hgss-build
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout integration scripts
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            gcc-arm-none-eabi \
+            binutils-arm-none-eabi \
+            libpng-dev \
+            python3-pil \
+            git
+
+      - name: Checkout pinned PT-BR source
+        run: |
+          git clone --filter=blob:none https://github.com/lucmsilva651/esmeralda-ptbr.git game
+          git -C game checkout 16899178c5d9b198b961c3e38389ccccbdff7836
+
+      - name: Checkout only HGSS sprite assets
+        run: |
+          git clone --depth 1 --filter=blob:none --sparse https://github.com/PokeAPI/sprites.git pokeapi-sprites
+          git -C pokeapi-sprites sparse-checkout set sprites/pokemon/versions/generation-iv/heartgold-soulsilver
+          test -f pokeapi-sprites/sprites/pokemon/versions/generation-iv/heartgold-soulsilver/1.png
+          test -f pokeapi-sprites/sprites/pokemon/versions/generation-iv/heartgold-soulsilver/back/shiny/386.png
+
+      - name: Apply HGSS visual overhaul
+        run: |
+          python3 scripts/apply_overhaul.py \
+            --project game \
+            --sprites-root pokeapi-sprites/sprites/pokemon/versions/generation-iv/heartgold-soulsilver
+
+      - name: Build and install agbcc
+        run: |
+          git clone --depth 1 https://github.com/pret/agbcc.git agbcc
+          ./build.sh
+          ./install.sh ../game
+        working-directory: agbcc
+
+      - name: Build ROM
+        env:
+          MODERN: "1"
+          COMPARE: "0"
+        run: |
+          make -j"$(nproc)" all
+        working-directory: game
+
+      - name: Prepare artifact
+        run: |
+          test -f game/pokeemerald_modern.gba
+          cp game/pokeemerald_modern.gba Emerald_PTBR_HGSS_v1.1.gba
+          sha256sum Emerald_PTBR_HGSS_v1.1.gba | tee SHA256SUMS.txt
+          ls -lh Emerald_PTBR_HGSS_v1.1.gba
+
+      - name: Upload playable build
+        uses: actions/upload-artifact@v4
+        with:
+          name: Emerald-PTBR-HGSS-v1.1
+          path: |
+            Emerald_PTBR_HGSS_v1.1.gba
+            SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 30
