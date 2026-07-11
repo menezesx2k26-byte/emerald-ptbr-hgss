@@ -24,7 +24,62 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  translate:
+    name: Translate PT-BR shard ${{ matrix.shard }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
+
+    steps:
+      - name: Checkout integration scripts
+        uses: actions/checkout@v4
+
+      - name: Install CPU translation runtime
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+          python3 -m pip install \
+            transformers==4.49.0 \
+            sentencepiece \
+            sacremoses
+
+      - name: Checkout pinned PT-BR source
+        run: |
+          git clone --filter=blob:none https://github.com/lucmsilva651/esmeralda-ptbr.git game
+          git -C game checkout 16899178c5d9b198b961c3e38389ccccbdff7836
+
+      - name: Translate assigned files with direct Brazilian Portuguese model
+        run: |
+          set -o pipefail
+          python3 scripts/translate_ptbr_direct.py \
+            --project game \
+            --shard-index "${{ matrix.shard }}" \
+            --shard-count 4 \
+            --report "translation-shard-${{ matrix.shard }}.json" \
+            2>&1 | tee "translation-shard-${{ matrix.shard }}.log"
+
+      - name: Create translation patch
+        run: |
+          git -C game diff --binary > "translation-shard-${{ matrix.shard }}.patch"
+          test -s "translation-shard-${{ matrix.shard }}.patch"
+
+      - name: Upload translation shard
+        uses: actions/upload-artifact@v4
+        with:
+          name: translation-shard-${{ matrix.shard }}
+          path: |
+            translation-shard-${{ matrix.shard }}.patch
+            translation-shard-${{ matrix.shard }}.json
+            translation-shard-${{ matrix.shard }}.log
+          if-no-files-found: error
+          retention-days: 14
+
   build:
+    name: Build playable ROM
+    needs: translate
     runs-on: ubuntu-latest
     timeout-minutes: 60
 
@@ -48,18 +103,85 @@ jobs:
           git clone --filter=blob:none https://github.com/lucmsilva651/esmeralda-ptbr.git game
           git -C game checkout 16899178c5d9b198b961c3e38389ccccbdff7836
 
-      - name: Checkout only HGSS sprite assets
+      - name: Download translation shards
+        uses: actions/download-artifact@v4
+        with:
+          pattern: translation-shard-*
+          path: translation-output
+          merge-multiple: true
+
+      - name: Apply PT-BR translation patches
+        run: |
+          for patch in translation-output/translation-shard-*.patch; do
+            echo "Applying ${patch}"
+            git -C game apply --whitespace=nowarn "$GITHUB_WORKSPACE/$patch"
+          done
+
+      - name: Combine translation reports
+        run: |
+          python3 - <<'PY'
+          import glob
+          import json
+          from pathlib import Path
+
+          reports = [
+              json.loads(Path(path).read_text(encoding="utf-8"))
+              for path in sorted(glob.glob("translation-output/translation-shard-*.json"))
+          ]
+          summary = {
+              "version": "1.3",
+              "shards": len(reports),
+              "text_spans_translated": sum(item["text_spans_translated"] for item in reports),
+              "files_changed": sum(item["files_changed"] for item in reports),
+              "assembly_blocks_translated": sum(item["assembly_blocks_translated"] for item in reports),
+              "c_strings_translated": sum(item["c_strings_translated"] for item in reports),
+              "model": reports[0]["model"],
+              "target_language_token": reports[0]["target_language_token"],
+              "placeholder_strategy": reports[0]["placeholder_strategy"],
+              "move_names_policy": "English move names and move descriptions preserved",
+              "excluded_move_files": [
+                  "src/data/text/move_names.h",
+                  "src/data/text/move_descriptions.h",
+              ],
+              "shard_reports": reports,
+              "note": "Automated consistency pass; in-game proofreading remains recommended.",
+          }
+          Path("translation_consistency_v1.3.json").write_text(
+              json.dumps(summary, indent=2, ensure_ascii=False) + "\n",
+              encoding="utf-8",
+          )
+          print(json.dumps({key: value for key, value in summary.items() if key != "shard_reports"}, indent=2, ensure_ascii=False))
+          PY
+
+      - name: Checkout only HGSS Pokémon sprite assets
         run: |
           git clone --depth 1 --filter=blob:none --sparse https://github.com/PokeAPI/sprites.git pokeapi-sprites
           git -C pokeapi-sprites sparse-checkout set sprites/pokemon/versions/generation-iv/heartgold-soulsilver
           test -f pokeapi-sprites/sprites/pokemon/versions/generation-iv/heartgold-soulsilver/1.png
           test -f pokeapi-sprites/sprites/pokemon/versions/generation-iv/heartgold-soulsilver/back/shiny/386.png
 
-      - name: Apply HGSS visual overhaul
+      - name: Checkout converted human overworld assets
+        run: |
+          git clone --depth 1 --filter=blob:none --sparse https://github.com/TeamAquasHideout/Team-Aquas-Asset-Repo.git team-aqua-assets
+          git -C team-aqua-assets sparse-checkout set "Overworld Trainer Sprites/RavePossum/Poffin-Case-Overworlds-Converted"
+          test -f "team-aqua-assets/Overworld Trainer Sprites/RavePossum/Poffin-Case-Overworlds-Converted/brendan/walking.png"
+          test -f "team-aqua-assets/Overworld Trainer Sprites/RavePossum/Poffin-Case-Overworlds-Converted/youngster.png"
+
+      - name: Apply HGSS visual overhaul v1.3
         run: |
           python3 scripts/apply_overhaul.py \
             --project game \
-            --sprites-root pokeapi-sprites/sprites/pokemon/versions/generation-iv/heartgold-soulsilver
+            --sprites-root pokeapi-sprites/sprites/pokemon/versions/generation-iv/heartgold-soulsilver \
+            --overworlds-root "team-aqua-assets/Overworld Trainer Sprites/RavePossum/Poffin-Case-Overworlds-Converted"
+
+      - name: Sanitize translated text
+        run: python3 scripts/sanitize_translated_text.py --project game --report sanitization_v1.3.json
+
+      - name: Repair corrupted translation tokens
+        run: python3 scripts/repair_translation_tokens.py --project game --report translation_token_repair_v1.3.json
+
+      - name: Normalize and validate PT-BR charmap
+        run: python3 scripts/normalize_charmap_ptbr.py --project game --report charmap_normalization_v1.3.json
 
       - name: Build and install agbcc
         run: |
@@ -68,27 +190,54 @@ jobs:
           ./build.sh
           ./install.sh ../game
 
-      - name: Build ROM
+      - name: Build ROM with complete log
+        id: rom_build
+        continue-on-error: true
+        working-directory: game
         env:
           MODERN: "1"
           COMPARE: "0"
         run: |
-          make -j"$(nproc)" all
-        working-directory: game
+          set -o pipefail
+          make -j"$(nproc)" all 2>&1 | tee ../build-v1.3.log
+
+      - name: Upload build diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-diagnostics-v1.3
+          path: |
+            build-v1.3.log
+            translation_consistency_v1.3.json
+            sanitization_v1.3.json
+            translation_token_repair_v1.3.json
+            charmap_normalization_v1.3.json
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Stop after build failure
+        if: steps.rom_build.outcome != 'success'
+        run: exit 1
 
       - name: Prepare artifact
         run: |
           test -f game/pokeemerald_modern.gba
-          cp game/pokeemerald_modern.gba Emerald_PTBR_HGSS_v1.1.gba
-          sha256sum Emerald_PTBR_HGSS_v1.1.gba | tee SHA256SUMS.txt
-          ls -lh Emerald_PTBR_HGSS_v1.1.gba
+          cp game/pokeemerald_modern.gba Emerald_PTBR_HGSS_v1.3.gba
+          sha256sum Emerald_PTBR_HGSS_v1.3.gba | tee SHA256SUMS.txt
+          cp game/overworld_import_v1.3.json .
+          ls -lh Emerald_PTBR_HGSS_v1.3.gba
 
       - name: Upload playable build
         uses: actions/upload-artifact@v4
         with:
-          name: Emerald-PTBR-HGSS-v1.1
+          name: Emerald-PTBR-HGSS-v1.3
           path: |
-            Emerald_PTBR_HGSS_v1.1.gba
+            Emerald_PTBR_HGSS_v1.3.gba
             SHA256SUMS.txt
+            overworld_import_v1.3.json
+            translation_consistency_v1.3.json
+            sanitization_v1.3.json
+            translation_token_repair_v1.3.json
+            charmap_normalization_v1.3.json
           if-no-files-found: error
           retention-days: 30
