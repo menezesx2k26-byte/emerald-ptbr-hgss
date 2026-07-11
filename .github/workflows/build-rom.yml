@@ -24,15 +24,70 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build:
+  translate:
+    name: Translate PT-BR shard ${{ matrix.shard }}
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
 
     steps:
       - name: Checkout integration scripts
         uses: actions/checkout@v4
 
-      - name: Install build and translation dependencies
+      - name: Install CPU translation runtime
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+          python3 -m pip install \
+            transformers==4.49.0 \
+            sentencepiece \
+            sacremoses
+
+      - name: Checkout pinned PT-BR source
+        run: |
+          git clone --filter=blob:none https://github.com/lucmsilva651/esmeralda-ptbr.git game
+          git -C game checkout 16899178c5d9b198b961c3e38389ccccbdff7836
+
+      - name: Translate assigned files
+        run: |
+          set -o pipefail
+          python3 scripts/translate_ptbr_fast.py \
+            --project game \
+            --shard-index "${{ matrix.shard }}" \
+            --shard-count 4 \
+            --report "translation-shard-${{ matrix.shard }}.json" \
+            2>&1 | tee "translation-shard-${{ matrix.shard }}.log"
+
+      - name: Create translation patch
+        run: |
+          git -C game diff --binary > "translation-shard-${{ matrix.shard }}.patch"
+          test -s "translation-shard-${{ matrix.shard }}.patch"
+
+      - name: Upload translation shard
+        uses: actions/upload-artifact@v4
+        with:
+          name: translation-shard-${{ matrix.shard }}
+          path: |
+            translation-shard-${{ matrix.shard }}.patch
+            translation-shard-${{ matrix.shard }}.json
+            translation-shard-${{ matrix.shard }}.log
+          if-no-files-found: error
+          retention-days: 7
+
+  build:
+    name: Build playable ROM
+    needs: translate
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout integration scripts
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -42,17 +97,60 @@ jobs:
             libpng-dev \
             python3-pil \
             git
-          python3 -m pip install --upgrade pip
-          python3 -m pip install \
-            torch \
-            transformers==4.49.0 \
-            sentencepiece \
-            sacremoses
 
       - name: Checkout pinned PT-BR source
         run: |
           git clone --filter=blob:none https://github.com/lucmsilva651/esmeralda-ptbr.git game
           git -C game checkout 16899178c5d9b198b961c3e38389ccccbdff7836
+
+      - name: Download translation shards
+        uses: actions/download-artifact@v4
+        with:
+          pattern: translation-shard-*
+          path: translation-output
+          merge-multiple: true
+
+      - name: Apply PT-BR translation patches
+        run: |
+          for patch in translation-output/translation-shard-*.patch; do
+            echo "Applying ${patch}"
+            git -C game apply --whitespace=nowarn "$GITHUB_WORKSPACE/$patch"
+          done
+          git -C game status --short
+
+      - name: Combine translation reports
+        run: |
+          python3 - <<'PY'
+          import glob
+          import json
+          from pathlib import Path
+
+          reports = []
+          for path in sorted(glob.glob("translation-output/translation-shard-*.json")):
+              reports.append(json.loads(Path(path).read_text(encoding="utf-8")))
+
+          summary = {
+              "version": "1.3",
+              "shards": len(reports),
+              "text_segments_translated": sum(item["text_segments_translated"] for item in reports),
+              "files_changed": sum(item["files_changed"] for item in reports),
+              "assembly_blocks_translated": sum(item["assembly_blocks_translated"] for item in reports),
+              "c_strings_translated": sum(item["c_strings_translated"] for item in reports),
+              "model": reports[0]["model"],
+              "move_names_policy": "English move names and descriptions preserved",
+              "excluded_move_files": [
+                  "src/data/text/move_names.h",
+                  "src/data/text/move_descriptions.h",
+              ],
+              "shard_reports": reports,
+              "note": "Automated consistency pass; in-game proofreading remains recommended.",
+          }
+          Path("translation_consistency_v1.3.json").write_text(
+              json.dumps(summary, indent=2, ensure_ascii=False) + "\n",
+              encoding="utf-8",
+          )
+          print(json.dumps({key: value for key, value in summary.items() if key != "shard_reports"}, indent=2, ensure_ascii=False))
+          PY
 
       - name: Checkout only HGSS Pokémon sprite assets
         run: |
@@ -74,31 +172,6 @@ jobs:
             --project game \
             --sprites-root pokeapi-sprites/sprites/pokemon/versions/generation-iv/heartgold-soulsilver \
             --overworlds-root "team-aqua-assets/Overworld Trainer Sprites/RavePossum/Poffin-Case-Overworlds-Converted"
-
-      - name: Normalize untranslated English text to PT-BR
-        id: translation
-        continue-on-error: true
-        run: |
-          set -o pipefail
-          python3 scripts/translate_ptbr_fast.py \
-            --project game \
-            --report translation_consistency_v1.3.json \
-            2>&1 | tee translation_v1.3.log
-
-      - name: Upload translation diagnostics
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: translation-diagnostics-v1.3
-          path: |
-            translation_v1.3.log
-            translation_consistency_v1.3.json
-          if-no-files-found: warn
-          retention-days: 7
-
-      - name: Stop after translation failure
-        if: steps.translation.outcome != 'success'
-        run: exit 1
 
       - name: Build and install agbcc
         run: |
