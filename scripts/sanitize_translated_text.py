@@ -8,7 +8,17 @@ from pathlib import Path
 
 import translate_ptbr as base
 
+PLACEHOLDER_RE = re.compile(r"\{[^{}]*\}")
 BROKEN_PLACEHOLDER_RE = re.compile(r"\{[^{}]*(?:\\n|\\l|\\p)[^{}]*\}")
+
+
+def normalize_placeholder_controls(raw: str) -> str:
+    def repair(match: re.Match[str]) -> str:
+        placeholder = re.sub(r"\\(?:n|l|p)", " ", match.group(0))
+        placeholder = re.sub(r"\s+", " ", placeholder)
+        return placeholder
+
+    return PLACEHOLDER_RE.sub(repair, raw)
 
 
 def safe_pages(paragraphs: list[str], width: int = 29) -> list[list[str]]:
@@ -51,6 +61,7 @@ def repair_assembly(path: Path) -> int:
         raw = "".join(base.LINE_RE.findall(match.group("body")))
         if not BROKEN_PLACEHOLDER_RE.search(raw):
             continue
+        raw = normalize_placeholder_controls(raw)
         paragraphs, terminal = base.split_raw(raw)
         replacements.append(
             (
@@ -75,6 +86,7 @@ def repair_c(path: Path) -> int:
         raw = match.group(1)
         if not BROKEN_PLACEHOLDER_RE.search(raw):
             continue
+        raw = normalize_placeholder_controls(raw)
         paragraphs, terminal = base.split_raw(raw)
         replacements.append(
             (
