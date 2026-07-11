@@ -7,6 +7,7 @@ on:
     paths:
       - ".github/workflows/rebuild-v1.3.yml"
       - "scripts/sanitize_translated_text.py"
+      - "scripts/repair_translation_tokens.py"
       - "scripts/normalize_charmap_ptbr.py"
 
 permissions:
@@ -110,7 +111,10 @@ jobs:
       - name: Run translated-text sanitizer
         run: python3 scripts/sanitize_translated_text.py --project game --report sanitization_v1.3.json
 
-      - name: Normalize PT-BR charmap
+      - name: Repair corrupted translation tokens
+        run: python3 scripts/repair_translation_tokens.py --project game --report translation_token_repair_v1.3.json
+
+      - name: Normalize and validate PT-BR charmap
         run: python3 scripts/normalize_charmap_ptbr.py --project game --report charmap_normalization_v1.3.json
 
       - name: Build and install agbcc
@@ -140,6 +144,7 @@ jobs:
             build-v1.3.log
             translation_consistency_v1.3.json
             sanitization_v1.3.json
+            translation_token_repair_v1.3.json
             charmap_normalization_v1.3.json
           if-no-files-found: warn
           retention-days: 7
@@ -165,6 +170,7 @@ jobs:
             overworld_import_v1.3.json
             translation_consistency_v1.3.json
             sanitization_v1.3.json
+            translation_token_repair_v1.3.json
             charmap_normalization_v1.3.json
           if-no-files-found: error
           retention-days: 30
