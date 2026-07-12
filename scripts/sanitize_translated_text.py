@@ -4,151 +4,90 @@ import argparse
 import json
 import re
 import subprocess
-import textwrap
 from collections import Counter
 from pathlib import Path
 
-import translate_ptbr as base
-
-PLACEHOLDER_RE = re.compile(r"\{[^{}]*\}")
-BROKEN_PLACEHOLDER_RE = re.compile(r"\{[^{}]*(?:\\n|\\l|\\p)[^{}]*\}")
-
-MANUAL_C_TRANSLATIONS = {
-    "Wild POKéMON will be lured": (
-        "{JOGADOR} usou o {STR_VAR_2}.\\p"
-        "POKéMON selvagens serão atraídos.{PAUSE_UNTIL_PRESS}"
-    ),
-}
+BLOCK_RE = re.compile(
+    r"(?ms)^(?P<label>[A-Za-z_][A-Za-z0-9_]*::?\n)"
+    r"(?P<body>(?:[ \t]*\.string[ \t]+\"(?:\\.|[^\"\\])*\"[ \t]*\n)+)"
+)
+LINE_RE = re.compile(r'\.string\s+"((?:\\.|[^"\\])*)"')
+C_RE = re.compile(r'_\("((?:\\.|[^"\\])*)"\)')
+PLACEHOLDER_RE = re.compile(r"\{[^{}]+\}")
+CONTROL_INSIDE_RE = re.compile(r"\\[nlp]")
 
 
-def normalize_placeholder_controls(raw: str) -> str:
-    def repair(match: re.Match[str]) -> str:
-        placeholder = re.sub(r"\\(?:n|l|p)", " ", match.group(0))
-        placeholder = re.sub(r"\s+", " ", placeholder)
-        return placeholder
-
-    return PLACEHOLDER_RE.sub(repair, raw)
-
-
-def safe_pages(paragraphs: list[str], width: int = 29) -> list[list[str]]:
-    result: list[list[str]] = []
-    for paragraph in paragraphs:
-        protected, mapping = base.protect(paragraph)
-        wrapped = textwrap.wrap(
-            protected,
-            width=width,
-            break_long_words=False,
-            break_on_hyphens=False,
-        ) or [""]
-        restored = [base.restore(line, mapping) for line in wrapped]
-        result.extend(restored[index : index + 3] for index in range(0, len(restored), 3))
-    return result
-
-
-def safe_encode(paragraphs: list[str], terminal: bool, assembly: bool) -> str:
-    output: list[str] = []
-    all_pages = safe_pages(paragraphs)
-    for page_index, page in enumerate(all_pages):
-        last_page = page_index == len(all_pages) - 1
-        for line_index, line in enumerate(page):
-            last_line = line_index == len(page) - 1
-            if not last_line:
-                control = "\\n" if line_index == 0 else "\\l"
-            elif not last_page:
-                control = "\\p"
-            else:
-                control = "$" if terminal else ""
-            value = line.replace('"', '\\"') + control
-            output.append(f'\t.string "{value}"\n' if assembly else value)
-    return "".join(output)
-
-
-def safe_reflow(raw: str, assembly: bool) -> str:
-    raw = normalize_placeholder_controls(raw)
-    paragraphs, terminal = base.split_raw(raw)
-    return safe_encode(paragraphs, terminal, assembly)
-
-
-def repair_assembly_placeholders(path: Path) -> int:
-    original = path.read_text(encoding="utf-8")
-    replacements: list[tuple[int, int, str]] = []
-    for match in base.BLOCK_RE.finditer(original):
-        raw = "".join(base.LINE_RE.findall(match.group("body")))
-        if not BROKEN_PLACEHOLDER_RE.search(raw):
-            continue
-        replacements.append(
-            (
-                match.start("body"),
-                match.end("body"),
-                safe_reflow(raw, True),
-            )
-        )
-    if not replacements:
-        return 0
-    updated = original
-    for start, end, value in reversed(replacements):
-        updated = updated[:start] + value + updated[end:]
-    path.write_text(updated, encoding="utf-8")
-    return len(replacements)
-
-
-def repair_c_placeholders(path: Path) -> int:
-    original = path.read_text(encoding="utf-8")
-    replacements: list[tuple[int, int, str]] = []
-    for match in base.C_RE.finditer(original):
-        raw = match.group(1)
-        if not BROKEN_PLACEHOLDER_RE.search(raw):
-            continue
-        replacements.append(
-            (
-                match.start(1),
-                match.end(1),
-                safe_reflow(raw, False),
-            )
-        )
-    if not replacements:
-        return 0
-    updated = original
-    for start, end, value in reversed(replacements):
-        updated = updated[:start] + value + updated[end:]
-    path.write_text(updated, encoding="utf-8")
-    return len(replacements)
-
-
-def git_original(project: Path, path: Path) -> str:
+def original_text(project: Path, path: Path) -> str:
     relative = path.relative_to(project).as_posix()
-    return subprocess.check_output(
+    result = subprocess.run(
         ["git", "-C", str(project), "show", f"HEAD:{relative}"],
+        check=True,
         text=True,
-        encoding="utf-8",
+        capture_output=True,
     )
+    return result.stdout
 
 
-def looks_runaway(current: str, original: str) -> bool:
-    if len(current.encode("utf-8")) > 1000:
+def repair_control_spaces(raw: str) -> tuple[str, int]:
+    repairs = 0
+
+    def repl(match: re.Match[str]) -> str:
+        nonlocal repairs
+        value = match.group(0)
+        fixed, count = CONTROL_INSIDE_RE.subn(" ", value)
+        repairs += count
+        return fixed
+
+    return PLACEHOLDER_RE.sub(repl, raw), repairs
+
+
+def placeholder_multiset(raw: str) -> Counter[str]:
+    return Counter(PLACEHOLDER_RE.findall(raw))
+
+
+def visible_words(raw: str) -> list[str]:
+    value = PLACEHOLDER_RE.sub(" ", raw)
+    value = re.sub(r"\\[nlp]", " ", value)
+    value = value.replace("$", " ")
+    return re.findall(r"[A-Za-zÀ-ÿ']+", value.lower())
+
+
+def repeated_trigram(words: list[str]) -> int:
+    if len(words) < 12:
+        return 0
+    trigrams = Counter(tuple(words[index:index + 3]) for index in range(len(words) - 2))
+    return trigrams.most_common(1)[0][1] if trigrams else 0
+
+
+def pathological(current: str, original: str) -> bool:
+    current_words = visible_words(current)
+    original_words = visible_words(original)
+    if len(current) > max(len(original) * 3, len(original) + 280):
         return True
-    if len(current) > max(384, len(original) * 5):
+    if len(current_words) > max(len(original_words) * 3, len(original_words) + 80):
         return True
-    words = re.findall(r"[A-Za-zÀ-ÿ]+", current.lower())
-    if len(current) > 220 and len(words) >= 24:
-        _, frequency = Counter(words).most_common(1)[0]
-        if frequency / len(words) >= 0.28:
-            return True
+    if len(current_words) >= 30 and repeated_trigram(current_words) >= 4:
+        return True
+    if "ZXQ" in current or "QXZ" in current:
+        return True
     return False
 
 
-def manual_or_original(original_raw: str) -> tuple[str, str]:
-    for marker, translation in MANUAL_C_TRANSLATIONS.items():
-        if marker in original_raw:
-            return safe_reflow(translation, False), "manual_ptbr"
-    return original_raw, "original_fallback"
+def unsafe(current: str, original: str) -> str | None:
+    if placeholder_multiset(current) != placeholder_multiset(original):
+        return "placeholder_mismatch"
+    if current.endswith("$") != original.endswith("$"):
+        return "terminator_mismatch"
+    if pathological(current, original):
+        return "pathological_translation"
+    return None
 
 
-def repair_c_runaways(project: Path, path: Path) -> list[dict[str, object]]:
+def sanitize_c(path: Path, project: Path, report: dict[str, object]) -> None:
     current_text = path.read_text(encoding="utf-8")
-    original_text = git_original(project, path)
-    current_matches = list(base.C_RE.finditer(current_text))
-    original_matches = list(base.C_RE.finditer(original_text))
+    original = original_text(project, path)
+    current_matches = list(C_RE.finditer(current_text))
+    original_matches = list(C_RE.finditer(original))
     if len(current_matches) != len(original_matches):
         raise RuntimeError(
             f"C string count changed in {path.relative_to(project)}: "
@@ -156,78 +95,85 @@ def repair_c_runaways(project: Path, path: Path) -> list[dict[str, object]]:
         )
 
     replacements: list[tuple[int, int, str]] = []
-    repaired: list[dict[str, object]] = []
-    for index, (current_match, original_match) in enumerate(zip(current_matches, original_matches)):
-        current_raw = current_match.group(1)
+    for current_match, original_match in zip(current_matches, original_matches):
+        raw = current_match.group(1)
         original_raw = original_match.group(1)
-        if not looks_runaway(current_raw, original_raw):
-            continue
-        replacement, strategy = manual_or_original(original_raw)
-        replacements.append((current_match.start(1), current_match.end(1), replacement))
-        repaired.append(
-            {
-                "index": index,
-                "strategy": strategy,
-                "translated_bytes": len(current_raw.encode("utf-8")),
-                "original_bytes": len(original_raw.encode("utf-8")),
-                "original_preview": original_raw[:120],
-            }
-        )
+        fixed, repairs = repair_control_spaces(raw)
+        reason = unsafe(fixed, original_raw)
+        if reason:
+            fixed = original_raw
+            report["reverted"][reason] = report["reverted"].get(reason, 0) + 1
+        elif repairs:
+            report["control_repairs"] += repairs
+        if fixed != raw:
+            replacements.append((current_match.start(1), current_match.end(1), fixed))
 
     updated = current_text
     for start, end, value in reversed(replacements):
         updated = updated[:start] + value + updated[end:]
-    if replacements:
+    if updated != current_text:
         path.write_text(updated, encoding="utf-8")
-    return repaired
+        report["files_changed"].append(path.relative_to(project).as_posix())
 
 
-def repair_assembly_runaways(project: Path, path: Path) -> list[dict[str, object]]:
+def assembly_raw(match: re.Match[str]) -> str:
+    return "".join(LINE_RE.findall(match.group("body")))
+
+
+def sanitize_assembly(path: Path, project: Path, report: dict[str, object]) -> None:
     current_text = path.read_text(encoding="utf-8")
-    original_text = git_original(project, path)
+    original = original_text(project, path)
     original_by_label = {
         match.group("label").strip(): match
-        for match in base.BLOCK_RE.finditer(original_text)
+        for match in BLOCK_RE.finditer(original)
     }
     replacements: list[tuple[int, int, str]] = []
-    repaired: list[dict[str, object]] = []
 
-    for current_match in base.BLOCK_RE.finditer(current_text):
+    for current_match in BLOCK_RE.finditer(current_text):
         label = current_match.group("label").strip()
         original_match = original_by_label.get(label)
         if original_match is None:
             continue
-        current_raw = "".join(base.LINE_RE.findall(current_match.group("body")))
-        original_raw = "".join(base.LINE_RE.findall(original_match.group("body")))
-        if not looks_runaway(current_raw, original_raw):
+        raw = assembly_raw(current_match)
+        original_raw = assembly_raw(original_match)
+        fixed, repairs = repair_control_spaces(raw)
+        reason = unsafe(fixed, original_raw)
+        if reason:
+            body = original_match.group("body")
+            report["reverted"][reason] = report["reverted"].get(reason, 0) + 1
+        elif repairs:
+            body = f'\t.string "{fixed}"\n'
+            report["control_repairs"] += repairs
+        else:
             continue
-        replacements.append(
-            (
-                current_match.start("body"),
-                current_match.end("body"),
-                original_match.group("body"),
-            )
-        )
-        repaired.append(
-            {
-                "label": label,
-                "strategy": "original_fallback",
-                "translated_bytes": len(current_raw.encode("utf-8")),
-                "original_bytes": len(original_raw.encode("utf-8")),
-            }
-        )
+        replacements.append((current_match.start("body"), current_match.end("body"), body))
 
     updated = current_text
     for start, end, value in reversed(replacements):
         updated = updated[:start] + value + updated[end:]
-    if replacements:
+    if updated != current_text:
         path.write_text(updated, encoding="utf-8")
-    return repaired
+        report["files_changed"].append(path.relative_to(project).as_posix())
+
+
+def validate(project: Path, files: list[Path]) -> list[dict[str, str]]:
+    problems: list[dict[str, str]] = []
+    for path in files:
+        text = path.read_text(encoding="utf-8")
+        for match in PLACEHOLDER_RE.finditer(text):
+            if CONTROL_INSIDE_RE.search(match.group(0)):
+                problems.append(
+                    {
+                        "file": path.relative_to(project).as_posix(),
+                        "placeholder": match.group(0),
+                    }
+                )
+    return problems
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--project", required=True, type=Path)
+    parser.add_argument("--project", type=Path, required=True)
     parser.add_argument("--report", type=Path)
     args = parser.parse_args()
     project = args.project.resolve()
@@ -244,80 +190,26 @@ def main() -> None:
         project / "src/data/union_room.h",
         project / "src/data/text/match_call_messages.h",
     ]
+    c_files = [path for path in c_files if path.exists()]
 
-    repaired_files: set[str] = set()
-    repaired_placeholders = 0
-    for path in assembly_files:
-        count = repair_assembly_placeholders(path)
-        if count:
-            repaired_placeholders += count
-            repaired_files.add(path.relative_to(project).as_posix())
-    for path in c_files:
-        if not path.exists():
-            continue
-        count = repair_c_placeholders(path)
-        if count:
-            repaired_placeholders += count
-            repaired_files.add(path.relative_to(project).as_posix())
-
-    runaway_repairs: list[dict[str, object]] = []
-    for path in assembly_files:
-        repairs = repair_assembly_runaways(project, path)
-        if repairs:
-            repaired_files.add(path.relative_to(project).as_posix())
-            runaway_repairs.append(
-                {"file": path.relative_to(project).as_posix(), "repairs": repairs}
-            )
-    for path in c_files:
-        if not path.exists():
-            continue
-        repairs = repair_c_runaways(project, path)
-        if repairs:
-            repaired_files.add(path.relative_to(project).as_posix())
-            runaway_repairs.append(
-                {"file": path.relative_to(project).as_posix(), "repairs": repairs}
-            )
-
-    remaining_placeholders: list[dict[str, str]] = []
-    for path in [*assembly_files, *[item for item in c_files if item.exists()]]:
-        text = path.read_text(encoding="utf-8")
-        for match in BROKEN_PLACEHOLDER_RE.finditer(text):
-            remaining_placeholders.append(
-                {
-                    "file": path.relative_to(project).as_posix(),
-                    "fragment": match.group(0),
-                }
-            )
-            if len(remaining_placeholders) >= 20:
-                break
-        if len(remaining_placeholders) >= 20:
-            break
-
-    report = {
-        "version": "1.3",
-        "repaired_placeholders": repaired_placeholders,
-        "runaway_translations_repaired": sum(
-            len(item["repairs"]) for item in runaway_repairs
-        ),
-        "runaway_repairs": runaway_repairs,
-        "files_changed": len(repaired_files),
-        "repaired_files": sorted(repaired_files),
-        "remaining_broken_placeholders": remaining_placeholders,
-        "valid": not remaining_placeholders,
-        "rules": [
-            "Control codes may not occur inside {...} placeholders",
-            "Mapped strings may not exceed 1000 UTF-8 bytes",
-            "Grossly expanded or repetitive machine translations fall back safely",
-        ],
+    report: dict[str, object] = {
+        "control_repairs": 0,
+        "reverted": {},
+        "files_changed": [],
+        "validation_problems": [],
     }
-    report_path = args.report or project / "sanitization_v1.3.json"
-    report_path.write_text(
-        json.dumps(report, indent=2, ensure_ascii=False) + "\n",
-        encoding="utf-8",
-    )
+    for path in assembly_files:
+        sanitize_assembly(path, project, report)
+    for path in c_files:
+        sanitize_c(path, project, report)
+
+    problems = validate(project, assembly_files + c_files)
+    report["validation_problems"] = problems
+    report_path = args.report or project / "translation_sanitizer_v1.3.json"
+    report_path.write_text(json.dumps(report, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     print(json.dumps(report, indent=2, ensure_ascii=False))
-    if remaining_placeholders:
-        raise RuntimeError("Broken placeholders remain after sanitization")
+    if problems:
+        raise SystemExit("Broken control placeholders remain after sanitization")
 
 
 if __name__ == "__main__":
