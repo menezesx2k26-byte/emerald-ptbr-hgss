@@ -7,6 +7,7 @@ on:
     paths:
       - ".github/workflows/rebuild-v1.3.yml"
       - "scripts/sanitize_translated_text.py"
+      - "scripts/sanitize_display_quotes.py"
       - "scripts/sanitize_charmap_text.py"
 
 permissions:
@@ -60,6 +61,12 @@ jobs:
             --project game \
             --report translation_sanitizer_v1.3.json
 
+      - name: Normalize display quotes
+        run: |
+          python3 scripts/sanitize_display_quotes.py \
+            --project game \
+            --report display_quote_sanitizer_v1.3.json
+
       - name: Audit translated text against charmap
         run: |
           python3 scripts/sanitize_charmap_text.py \
@@ -109,6 +116,7 @@ jobs:
           path: |
             build-v1.3.log
             translation_sanitizer_v1.3.json
+            display_quote_sanitizer_v1.3.json
             charmap_sanitizer_v1.3.json
           if-no-files-found: error
           retention-days: 7
@@ -150,6 +158,7 @@ jobs:
             overworld_import_v1.3.json
             translation_consistency_v1.3.json
             translation_sanitizer_v1.3.json
+            display_quote_sanitizer_v1.3.json
             charmap_sanitizer_v1.3.json
           if-no-files-found: error
           retention-days: 30
