@@ -6,6 +6,7 @@ on:
     branches: [main]
     paths:
       - ".github/workflows/rebuild-v1.3.yml"
+      - "scripts/sanitize_translated_text.py"
 
 permissions:
   contents: read
@@ -52,6 +53,12 @@ jobs:
             git -C game apply --whitespace=nowarn "$GITHUB_WORKSPACE/$patch"
           done
 
+      - name: Sanitize translated text
+        run: |
+          python3 scripts/sanitize_translated_text.py \
+            --project game \
+            --report translation_sanitizer_v1.3.json
+
       - name: Checkout only HGSS Pokémon sprite assets
         run: |
           git clone --depth 1 --filter=blob:none --sparse https://github.com/PokeAPI/sprites.git pokeapi-sprites
@@ -92,7 +99,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: build-diagnostics-v1.3
-          path: build-v1.3.log
+          path: |
+            build-v1.3.log
+            translation_sanitizer_v1.3.json
           if-no-files-found: error
           retention-days: 7
 
@@ -132,5 +141,6 @@ jobs:
             SHA256SUMS.txt
             overworld_import_v1.3.json
             translation_consistency_v1.3.json
+            translation_sanitizer_v1.3.json
           if-no-files-found: error
           retention-days: 30
