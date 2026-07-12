@@ -7,6 +7,7 @@ on:
     paths:
       - ".github/workflows/rebuild-v1.3.yml"
       - "scripts/sanitize_translated_text.py"
+      - "scripts/sanitize_charmap_text.py"
 
 permissions:
   contents: read
@@ -59,6 +60,12 @@ jobs:
             --project game \
             --report translation_sanitizer_v1.3.json
 
+      - name: Audit translated text against charmap
+        run: |
+          python3 scripts/sanitize_charmap_text.py \
+            --project game \
+            --report charmap_sanitizer_v1.3.json
+
       - name: Checkout only HGSS Pokémon sprite assets
         run: |
           git clone --depth 1 --filter=blob:none --sparse https://github.com/PokeAPI/sprites.git pokeapi-sprites
@@ -102,6 +109,7 @@ jobs:
           path: |
             build-v1.3.log
             translation_sanitizer_v1.3.json
+            charmap_sanitizer_v1.3.json
           if-no-files-found: error
           retention-days: 7
 
@@ -142,5 +150,6 @@ jobs:
             overworld_import_v1.3.json
             translation_consistency_v1.3.json
             translation_sanitizer_v1.3.json
+            charmap_sanitizer_v1.3.json
           if-no-files-found: error
           retention-days: 30
