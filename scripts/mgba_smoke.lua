@@ -1,4 +1,5 @@
 local output_dir = os.getenv("MGBA_SMOKE_OUTPUT") or "."
+local release_version = os.getenv("EMERALD_RELEASE_VERSION") or "1.3.1"
 local report_path = output_dir .. "/mgba_smoke_raw.json"
 local targets = {120, 600, 900}
 local samples = {}
@@ -33,7 +34,7 @@ end
 local function write_report(status, crashed)
     local file = assert(io.open(report_path, "w"))
     file:write("{\n")
-    file:write(string.format('  "version": "1.3.1",\n'))
+    file:write(string.format('  "version": "%s",\n', json_escape(release_version)))
     file:write(string.format('  "status": "%s",\n', json_escape(status)))
     file:write(string.format('  "crashed": %s,\n', crashed and "true" or "false"))
     file:write(string.format('  "game_title": "%s",\n', json_escape(emu:getGameTitle())))

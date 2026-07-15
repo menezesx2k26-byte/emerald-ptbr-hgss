@@ -6,6 +6,8 @@ from pathlib import Path
 
 from PIL import Image
 
+from release import release_tag, release_version
+
 
 def import_overworld_sprites(project: Path, assets_root: Path) -> dict[str, object]:
     destination_root = project / "graphics/object_events/pics/people"
@@ -63,7 +65,7 @@ def import_overworld_sprites(project: Path, assets_root: Path) -> dict[str, obje
     field_effect.write_text(text, encoding="utf-8")
 
     report: dict[str, object] = {
-        "version": "1.3.1",
+        "version": release_version(),
         "source": "Team Aqua Asset Repo / RavePossum / Poffin-Case-Overworlds-Converted",
         "copied_count": len(copied),
         "copied": copied,
@@ -74,7 +76,7 @@ def import_overworld_sprites(project: Path, assets_root: Path) -> dict[str, obje
         "fly_animation_alignment_patched": True,
         "palette_strategy": "vanilla shared palettes preserved",
     }
-    (project / "overworld_import_v1.3.1.json").write_text(
+    (project / f"overworld_import_{release_tag()}.json").write_text(
         json.dumps(report, indent=2, ensure_ascii=False) + "\n",
         encoding="utf-8",
     )

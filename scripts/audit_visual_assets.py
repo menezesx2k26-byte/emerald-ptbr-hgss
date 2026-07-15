@@ -7,6 +7,7 @@ from pathlib import Path
 from PIL import Image
 
 from common import read_jasc
+from release import release_tag, release_version
 from sprites import destination, national_dex_symbols
 
 
@@ -38,6 +39,8 @@ def audit_pokemon(project: Path) -> dict[str, object]:
     problems: list[str] = []
     invalid_symbols: list[str] = []
     duplicate_second_frame: list[str] = []
+    first_frame_mismatch: list[str] = []
+    changed_pixels: list[int] = []
     symbols = national_dex_symbols(project)
     for symbol in symbols:
         problem_count_before = len(problems)
@@ -56,24 +59,42 @@ def audit_pokemon(project: Path) -> dict[str, object]:
                 problems.append(f"invalid palette {palette}: {error}")
         if animation.exists():
             with Image.open(animation) as image:
-                if image.crop((0, 0, 64, 64)).tobytes() == image.crop((0, 64, 64, 128)).tobytes():
+                first_frame = image.crop((0, 0, 64, 64))
+                second_frame = image.crop((0, 64, 64, 128))
+                if front.exists():
+                    with Image.open(front) as front_image:
+                        if first_frame.tobytes() != front_image.tobytes():
+                            first_frame_mismatch.append(symbol)
+                if first_frame.tobytes() == second_frame.tobytes():
                     duplicate_second_frame.append(symbol)
+                changed_pixels.append(
+                    sum(a != b for a, b in zip(first_frame.getdata(), second_frame.getdata()))
+                )
         if len(problems) > problem_count_before:
             invalid_symbols.append(symbol)
 
+    valid = not problems and not duplicate_second_frame and not first_frame_mismatch
     return {
+        "valid": valid,
         "species_checked": len(symbols),
         "valid_species": len(symbols) - len(invalid_symbols),
         "invalid_species": invalid_symbols,
         "problems": problems,
         "static_animation_frame_count": len(duplicate_second_frame),
         "static_animation_species": duplicate_second_frame,
-        "animation_policy": "The imported HGSS source contains one front pose; frame two intentionally duplicates it.",
+        "first_frame_mismatch_count": len(first_frame_mismatch),
+        "first_frame_mismatch_species": first_frame_mismatch,
+        "changed_pixels_min": min(changed_pixels, default=0),
+        "changed_pixels_max": max(changed_pixels, default=0),
+        "animation_policy": (
+            "Frame one preserves the imported HGSS pose. Frame two applies a one-pixel idle lift "
+            "derived from the same indexed artwork; Black/White assets are not mixed in."
+        ),
     }
 
 
 def audit_overworlds(project: Path) -> dict[str, object]:
-    report_path = project / "overworld_import_v1.3.1.json"
+    report_path = project / f"overworld_import_{release_tag()}.json"
     if not report_path.exists():
         return {"valid": False, "problem": f"missing: {report_path}"}
     report = json.loads(report_path.read_text(encoding="utf-8"))
@@ -149,9 +170,9 @@ def main() -> None:
     overworlds = audit_overworlds(project)
     water = audit_water(project)
     maps = audit_maps(project)
-    valid = not pokemon["problems"] and overworlds["valid"] and water["valid"] and maps["valid"]
+    valid = pokemon["valid"] and overworlds["valid"] and water["valid"] and maps["valid"]
     report = {
-        "version": "1.3.1",
+        "version": release_version(),
         "valid": valid,
         "pokemon_battle_sprites": pokemon,
         "human_overworlds": overworlds,

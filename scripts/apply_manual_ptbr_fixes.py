@@ -7,6 +7,8 @@ from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 
+from release import release_tag, release_version
+
 
 BLOCK_RE = re.compile(
     r'(?ms)^(?P<label>[A-Za-z_][A-Za-z0-9_]*::?\n)'
@@ -239,13 +241,13 @@ def main() -> None:
 
     applied = [apply_fix(project, fix) for fix in FIXES]
     report = {
-        "version": "1.3.1",
+        "version": release_version(),
         "fixes_applied": len(applied),
         "fixes": applied,
         "move_names_policy": "English move names preserved",
         "valid": len(applied) == len(FIXES),
     }
-    report_path = args.report or project / "manual_ptbr_fixes_v1.3.1.json"
+    report_path = args.report or project / f"manual_ptbr_fixes_{release_tag()}.json"
     report_path.write_text(json.dumps(report, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     print(json.dumps(report, indent=2, ensure_ascii=False))
 

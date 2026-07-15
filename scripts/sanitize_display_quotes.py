@@ -5,6 +5,8 @@ import json
 import re
 from pathlib import Path
 
+from release import release_tag, release_version
+
 STRING_RE = re.compile(r'(?P<prefix>\.string\s+")(?P<body>(?:\\.|[^"\\])*)(?P<suffix>")')
 C_RE = re.compile(r'(?P<prefix>_\(")(?P<body>(?:\\.|[^"\\])*)(?P<suffix>"\))')
 
@@ -73,12 +75,12 @@ def main() -> None:
             remaining.append(path.relative_to(project).as_posix())
 
     report = {
-        'version': '1.3.1',
+        'version': release_version(),
         'quotes_converted': quote_count,
         'files_changed': files_changed,
         'remaining_escaped_quotes': remaining,
     }
-    report_path = args.report or project / 'display_quote_sanitizer_v1.3.1.json'
+    report_path = args.report or project / f'display_quote_sanitizer_{release_tag()}.json'
     report_path.write_text(json.dumps(report, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')
     print(json.dumps(report, indent=2, ensure_ascii=False))
     if remaining:

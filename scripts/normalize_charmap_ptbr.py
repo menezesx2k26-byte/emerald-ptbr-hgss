@@ -5,6 +5,8 @@ import json
 import re
 from pathlib import Path
 
+from release import release_tag, release_version
+
 REPLACEMENTS = {
     "ã": "ä",
     "õ": "ö",
@@ -146,7 +148,7 @@ def main() -> None:
                 break
 
     report = {
-        "version": "1.3.1",
+        "version": release_version(),
         "total_replacements": total,
         "files_changed": len(changed),
         "changes": changed,
@@ -157,7 +159,7 @@ def main() -> None:
             "All visible characters in encoded strings must exist in charmap.txt.",
         ],
     }
-    report_path = args.report or project / "charmap_normalization_v1.3.1.json"
+    report_path = args.report or project / f"charmap_normalization_{release_tag()}.json"
     report_path.write_text(
         json.dumps(report, indent=2, ensure_ascii=False) + "\n",
         encoding="utf-8",

@@ -84,6 +84,36 @@ def index_image(image: Image.Image, palette: Sequence[tuple[int, int, int]]) -> 
     return output
 
 
+def build_idle_frame(image: Image.Image) -> Image.Image:
+    """Create a subtle second pose without mixing another generation's artwork."""
+    if image.mode != "P" or image.size != (CANVAS_SIZE, CANVAS_SIZE):
+        raise ValueError("Idle animation expects a 64x64 indexed image")
+
+    bbox = image.getbbox()
+    if bbox is None:
+        raise ValueError("Idle animation cannot be generated from an empty sprite")
+
+    left, top, right, bottom = bbox
+    offset: tuple[int, int] | None = None
+    if top > 0:
+        offset = (0, -1)
+    elif bottom < CANVAS_SIZE:
+        offset = (0, 1)
+    elif left > 0:
+        offset = (-1, 0)
+    elif right < CANVAS_SIZE:
+        offset = (1, 0)
+    output = Image.new("P", image.size, 0)
+    output.putpalette(image.getpalette())
+    if left == 0 and top == 0 and right == CANVAS_SIZE and bottom == CANVAS_SIZE:
+        compressed = image.resize((CANVAS_SIZE, CANVAS_SIZE - 1), Image.Resampling.NEAREST)
+        output.paste(compressed, (0, 1))
+    elif offset is not None:
+        output.paste(image, offset)
+    output.info["transparency"] = 0
+    return output
+
+
 def build_shiny_palette(
     normal_images: Sequence[Image.Image],
     shiny_images: Sequence[Image.Image],
@@ -166,10 +196,11 @@ def import_hgss_sprites(project: Path, sprites_root: Path) -> None:
         out.mkdir(parents=True, exist_ok=True)
         indexed_front.save(out / "front.png", optimize=False)
         indexed_back.save(out / "back.png", optimize=False)
+        idle_frame = build_idle_frame(indexed_front)
         animation = Image.new("P", (64, 128), 0)
         animation.putpalette(indexed_front.getpalette())
         animation.paste(indexed_front, (0, 0))
-        animation.paste(indexed_front, (0, 64))
+        animation.paste(idle_frame, (0, 64))
         animation.info["transparency"] = 0
         animation.save(out / "anim_front.png", optimize=False)
         write_jasc(out / "normal.pal", normal_palette)

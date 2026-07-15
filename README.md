@@ -3,6 +3,18 @@
 Overhaul de Pokémon Emerald com localização em português brasileiro e uma
 direção visual inspirada em HeartGold/SoulSilver.
 
+## v1.4 em desenvolvimento
+
+A v1.4 começou pela remoção dos 386 segundos quadros estáticos de batalha.
+Cada animação agora preserva a pose e a paleta HGSS no primeiro quadro e gera
+um movimento ocioso sutil, de um pixel, no segundo. A auditoria bloqueia o
+build se algum quadro continuar duplicado ou se o primeiro deixar de coincidir
+com o sprite frontal importado.
+
+As próximas entregas são as formas alternativas de Unown/Castform e a troca
+dos quatro tilesets-piloto por arte própria, em vez de apenas paletas derivadas
+de Emerald. O escopo e os critérios estão em [`V1.4_ROADMAP.md`](V1.4_ROADMAP.md).
+
 ## Estado da v1.3.1
 
 - 386 Pokémon com sprites de batalha frontais, traseiros, normais e shiny da
@@ -29,8 +41,8 @@ direção visual inspirada em HeartGold/SoulSilver.
 original de HGSS. Os quatro mapas listados acima ainda reutilizam a geometria e
 os tiles de Emerald com novas paletas. Da mesma forma, a fonte pública fornece
 uma pose frontal por Pokémon; por isso o segundo quadro de `anim_front.png` é
-uma cópia estática. Formas alternativas de Unown e Castform também continuam
-com os assets da base.
+uma cópia estática na release v1.3.1. Formas alternativas de Unown e Castform
+também continuam com os assets da base nessa release.
 
 Esses pontos são trabalho de arte e animação para uma v1.4, não defeitos que a
 pipeline da v1.3.1 possa corrigir automaticamente.
