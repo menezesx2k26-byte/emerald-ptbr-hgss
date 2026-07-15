@@ -56,8 +56,10 @@ class DisplayStringSanitizerTests(unittest.TestCase):
 
     def test_normalizes_all_reviewed_littleroot_blocks(self) -> None:
         by_file: dict[str, list[tuple[str, tuple[str, ...]]]] = defaultdict(list)
+        by_label: dict[str, tuple[str, tuple[str, ...]]] = {}
         for relative, label, replacement in P1_ASSEMBLY_REPLACEMENTS:
             by_file[relative].append((label, replacement))
+            by_label[label] = (relative, replacement)
 
         with tempfile.TemporaryDirectory() as directory:
             project = Path(directory)
@@ -71,7 +73,6 @@ class DisplayStringSanitizerTests(unittest.TestCase):
                         raw.replace("MÃE", "MäE")
                         .replace("REPÓRTER", "INTERVIEWER")
                         .replace("Transmitimos", "Trouxemos")
-                        .replace("nossa filha", "daughter")
                     )
                     source_blocks.append(f'{label}:\n\t.string "{rough}"\n')
                 path.write_text("\n".join(source_blocks), encoding="utf-8")
@@ -84,14 +85,28 @@ class DisplayStringSanitizerTests(unittest.TestCase):
                 self.assertIn(f"{label}:", updated)
                 for line in replacement:
                     self.assertIn(f'\t.string "{line}"', updated)
-            bedroom = (project / P1_ASSEMBLY_REPLACEMENTS[0][0]).read_text(encoding="utf-8")
-            television = (project / P1_ASSEMBLY_REPLACEMENTS[1][0]).read_text(encoding="utf-8")
-            rival_house = (project / P1_ASSEMBLY_REPLACEMENTS[-1][0]).read_text(encoding="utf-8")
+
+            bedroom_path, _ = by_label["PlayersHouse_2F_Text_HowDoYouLikeYourRoom"]
+            television_path, _ = by_label["PlayersHouse_1F_Text_ReportFromPetalburgGym"]
+            neighbor_path, _ = by_label["RivalsHouse_1F_Text_OhYoureTheNewNeighbor"]
+            may_path, _ = by_label["RivalsHouse_1F_Text_MayWhoAreYou"]
+            brendan_path, _ = by_label["RivalsHouse_1F_Text_BrendanWhoAreYou"]
+
+            bedroom = (project / bedroom_path).read_text(encoding="utf-8")
+            television = (project / television_path).read_text(encoding="utf-8")
+            neighbor = (project / neighbor_path).read_text(encoding="utf-8")
+            may = (project / may_path).read_text(encoding="utf-8")
+            brendan = (project / brendan_path).read_text(encoding="utf-8")
+
             self.assertIn("MÃE: {JOGADOR}, gostou do seu", bedroom)
             self.assertIn("REPÓRTER: ...Transmitimos esta", television)
             self.assertNotIn("INTERVIEWER", television)
-            self.assertIn("{STR_VAR_1} mora aqui e tem", rival_house)
-            self.assertEqual(rival_house.count("{STR_VAR_1}"), 3)
+            self.assertIn("{STR_VAR_1} mora aqui e tem", neighbor)
+            self.assertEqual(neighbor.count("{STR_VAR_1}"), 3)
+            self.assertIn("Hum... Eu sou MAY.", may)
+            self.assertEqual(may.count("{JOGADOR}"), 5)
+            self.assertIn("Meu nome é BRENDAN.", brendan)
+            self.assertEqual(brendan.count("{JOGADOR}"), 2)
 
     def test_move_tables_are_outside_display_normalization(self) -> None:
         self.assertTrue(all("Move" not in label for label in CORE_UI_REPLACEMENTS))
