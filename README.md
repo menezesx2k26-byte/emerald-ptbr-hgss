@@ -20,6 +20,8 @@ direção visual inspirada em HeartGold/SoulSilver.
   commit; os patches de tradução concluídos também ficam versionados.
 - auditoria automática de 386 conjuntos de sprites, 129 overworlds, 16 assets
   de água/efeitos, quatro layouts, charmap e cabeçalho/checksum da ROM.
+- smoke test no `mgba-headless` fixado por commit: 900 frames, amostragem de
+  VRAM e três screenshots validados contra tela vazia ou congelada.
 
 ## Limites conhecidos
 
@@ -42,11 +44,13 @@ O workflow `Rebuild Emerald PT-BR HGSS v1.3.1` aplica, nesta ordem:
 3. normalização e validação do charmap PT-BR;
 4. overhaul visual e auditoria dos assets;
 5. compilação com `agbcc` fixado por commit;
-6. validação estrutural da ROM de 16 MiB.
+6. validação estrutural da ROM de 16 MiB;
+7. boot automatizado no mGBA headless com validação de frames, VRAM e imagens.
 
-A validação estrutural não substitui um playtest no mGBA. Diálogos, colisões,
-transições de mapa, batalhas e efeitos ainda precisam de QA em emulador antes
-de chamar a tradução de 100% revisada.
+O smoke test detecta ROM que não abre, trava ou deixa de renderizar. Ele não
+substitui o playtest humano de diálogos, colisões, transições, batalhas e
+efeitos. A passagem manual está especificada em
+[`QA_CHECKLIST_v1.3.1.md`](QA_CHECKLIST_v1.3.1.md).
 
 ## Créditos e fontes
 

@@ -9,6 +9,7 @@ on:
       - "scripts/**"
       - "tests/**"
       - "translation/**"
+      - "QA_CHECKLIST_v1.3.1.md"
       - "README.md"
 
 permissions:
@@ -24,6 +25,7 @@ env:
   POKEAPI_SPRITES_SHA: bf4c47ac82c33b330e33d98b8882d1cedb2f53e7
   TEAM_AQUA_ASSETS_SHA: 36b619ecd1d2df95212b375c95803af78414f78a
   AGBCC_SHA: da598c1d918402c42c0c0d7128ba14567f3175e9
+  MGBA_SHA: 5157ce208a5965e8a47bf5b48b5aae5198c22a5e
 
 jobs:
   quality:
@@ -59,7 +61,11 @@ jobs:
             build-essential \
             gcc-arm-none-eabi \
             binutils-arm-none-eabi \
+            cmake \
+            ninja-build \
             libpng-dev \
+            liblua5.4-dev \
+            zlib1g-dev \
             python3-pil \
             git
 
@@ -164,6 +170,40 @@ jobs:
           ./build.sh
           ./install.sh ../game
 
+      - name: Build pinned mGBA headless
+        run: |
+          git clone --filter=blob:none --no-checkout https://github.com/mgba-emu/mgba.git mgba
+          git -C mgba checkout --detach "$MGBA_SHA"
+          test "$(git -C mgba rev-parse HEAD)" = "$MGBA_SHA"
+          cmake -S mgba -B mgba-build -G Ninja \
+            -DBUILD_HEADLESS=ON \
+            -DBUILD_QT=OFF \
+            -DBUILD_SDL=OFF \
+            -DBUILD_GL=OFF \
+            -DBUILD_GLES2=OFF \
+            -DBUILD_GLES3=OFF \
+            -DBUILD_SHARED=OFF \
+            -DBUILD_STATIC=ON \
+            -DM_CORE_GB=OFF \
+            -DENABLE_DEBUGGERS=OFF \
+            -DENABLE_GDB_STUB=OFF \
+            -DENABLE_SCRIPTING=ON \
+            -DUSE_LUA=5.4 \
+            -DUSE_PNG=ON \
+            -DUSE_ZLIB=ON \
+            -DUSE_FFMPEG=OFF \
+            -DUSE_LIBZIP=OFF \
+            -DUSE_SQLITE3=OFF \
+            -DUSE_ELF=OFF \
+            -DUSE_EDITLINE=OFF \
+            -DUSE_FREETYPE=OFF \
+            -DUSE_DISCORD_RPC=OFF \
+            -DUSE_LZMA=OFF \
+            -DUSE_MINIZIP=OFF \
+            -DUSE_JSON_C=OFF
+          cmake --build mgba-build --target mgba-headless
+          test -x mgba-build/mgba-headless
+
       - name: Build ROM with full diagnostics
         id: buildrom
         continue-on-error: true
@@ -174,23 +214,6 @@ jobs:
         env:
           MODERN: "1"
           COMPARE: "0"
-
-      - name: Upload build diagnostics
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-diagnostics-v1.3.1
-          path: |
-            build-v1.3.1.log
-            translation_sanitizer_v1.3.1.json
-            translation_token_repair_v1.3.1.json
-            manual_ptbr_fixes_v1.3.1.json
-            display_quote_sanitizer_v1.3.1.json
-            charmap_normalization_v1.3.1.json
-            charmap_sanitizer_v1.3.1.json
-            visual_audit_v1.3.1.json
-          if-no-files-found: warn
-          retention-days: 14
 
       - name: Stop on build failure
         if: steps.buildrom.outcome != 'success'
@@ -234,6 +257,49 @@ jobs:
           )
           PY
 
+      - name: Run headless mGBA boot and render smoke test
+        id: mgba_smoke
+        continue-on-error: true
+        env:
+          MGBA_SMOKE_OUTPUT: ${{ github.workspace }}/mgba-smoke
+        run: |
+          mkdir -p "$MGBA_SMOKE_OUTPUT"
+          set -o pipefail
+          timeout --preserve-status --signal=INT --kill-after=5s 30s \
+            mgba-build/mgba-headless \
+            --script "$GITHUB_WORKSPACE/scripts/mgba_smoke.lua" \
+            "$GITHUB_WORKSPACE/Emerald_PTBR_HGSS_v1.3.1.gba" \
+            2>&1 | tee mgba-smoke-v1.3.1.log
+          python3 scripts/validate_mgba_smoke.py \
+            --raw-report mgba-smoke/mgba_smoke_raw.json \
+            --screenshots-dir mgba-smoke \
+            --report mgba_smoke_validation_v1.3.1.json
+
+      - name: Upload build and emulator diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-diagnostics-v1.3.1
+          path: |
+            build-v1.3.1.log
+            mgba-smoke-v1.3.1.log
+            mgba-smoke/
+            translation_sanitizer_v1.3.1.json
+            translation_token_repair_v1.3.1.json
+            manual_ptbr_fixes_v1.3.1.json
+            display_quote_sanitizer_v1.3.1.json
+            charmap_normalization_v1.3.1.json
+            charmap_sanitizer_v1.3.1.json
+            visual_audit_v1.3.1.json
+            rom_validation_v1.3.1.json
+            mgba_smoke_validation_v1.3.1.json
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Stop on mGBA smoke failure
+        if: steps.buildrom.outcome == 'success' && steps.mgba_smoke.outcome != 'success'
+        run: exit 1
+
       - name: Upload playable ROM
         uses: actions/upload-artifact@v4
         with:
@@ -251,5 +317,9 @@ jobs:
             charmap_sanitizer_v1.3.1.json
             visual_audit_v1.3.1.json
             rom_validation_v1.3.1.json
+            mgba_smoke_validation_v1.3.1.json
+            mgba-smoke/mgba_smoke_raw.json
+            mgba-smoke/mgba-frame-*.png
+            QA_CHECKLIST_v1.3.1.md
           if-no-files-found: error
           retention-days: 30
