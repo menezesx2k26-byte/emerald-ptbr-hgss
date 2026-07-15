@@ -9,6 +9,17 @@ from release import release_tag, release_version
 
 STRING_RE = re.compile(r'(?P<prefix>\.string\s+")(?P<body>(?:\\.|[^"\\])*)(?P<suffix>")')
 C_RE = re.compile(r'(?P<prefix>_\(")(?P<body>(?:\\.|[^"\\])*)(?P<suffix>"\))')
+PLACEHOLDER_RE = re.compile(r"\{[^{}]+\}")
+
+# Exact display strings exposed by the interactive P1 pass.  They are
+# normalized here after the reviewed dialogue pass so legacy mojibake and the
+# shared YES/NO menu cannot leak into otherwise translated interfaces.
+CORE_UI_REPLACEMENTS = {
+    "gText_YesNo": r"SIM\nNÃO",
+    "gText_Yes": "SIM",
+    "gText_No": "NÃO",
+    "gText_No4": "NÃO",
+}
 
 
 def replace_quotes(raw: str) -> tuple[str, int]:
@@ -36,6 +47,36 @@ def process(path: Path, pattern: re.Pattern[str]) -> int:
     if updated != original:
         path.write_text(updated, encoding='utf-8')
     return replaced
+
+
+def c_constant_pattern(label: str) -> re.Pattern[str]:
+    return re.compile(
+        rf'(?m)^(?P<prefix>(?:ALIGNED\(4\)\s+)?const u8 {re.escape(label)}\[\]\s*=\s*_\(")'
+        rf'(?P<body>(?:\\.|[^"\\])*)'
+        rf'(?P<suffix>"\);(?:\s*//.*)?)$'
+    )
+
+
+def normalize_core_ui_strings(path: Path) -> list[dict[str, str]]:
+    original = path.read_text(encoding='utf-8')
+    updated = original
+    applied: list[dict[str, str]] = []
+
+    for label, replacement in CORE_UI_REPLACEMENTS.items():
+        pattern = c_constant_pattern(label)
+        matches = list(pattern.finditer(updated))
+        if len(matches) != 1:
+            raise RuntimeError(f"Expected one {label} in {path}, found {len(matches)}")
+        match = matches[0]
+        current = match.group('body')
+        if sorted(PLACEHOLDER_RE.findall(current)) != sorted(PLACEHOLDER_RE.findall(replacement)):
+            raise RuntimeError(f"Placeholder mismatch in {label}")
+        updated = updated[:match.start('body')] + replacement + updated[match.end('body'):]
+        applied.append({"label": label, "before": current, "after": replacement})
+
+    if updated != original:
+        path.write_text(updated, encoding='utf-8')
+    return applied
 
 
 def main() -> None:
@@ -69,6 +110,11 @@ def main() -> None:
             quote_count += count
             files_changed.append(path.relative_to(project).as_posix())
 
+    strings_path = project / 'src/strings.c'
+    core_ui = normalize_core_ui_strings(strings_path)
+    if core_ui and 'src/strings.c' not in files_changed:
+        files_changed.append('src/strings.c')
+
     remaining = []
     for path in assembly_files + c_files:
         if '\\"' in path.read_text(encoding='utf-8'):
@@ -77,8 +123,10 @@ def main() -> None:
     report = {
         'version': release_version(),
         'quotes_converted': quote_count,
+        'core_ui_strings_normalized': core_ui,
         'files_changed': files_changed,
         'remaining_escaped_quotes': remaining,
+        'move_names_policy': 'English move names and descriptions preserved',
     }
     report_path = args.report or project / f'display_quote_sanitizer_{release_tag()}.json'
     report_path.write_text(json.dumps(report, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')
