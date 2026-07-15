@@ -136,6 +136,10 @@ jobs:
           test "$(git -C pokeapi-sprites rev-parse HEAD)" = "$POKEAPI_SPRITES_SHA"
           test -f pokeapi-sprites/sprites/pokemon/versions/generation-iv/heartgold-soulsilver/1.png
           test -f pokeapi-sprites/sprites/pokemon/versions/generation-iv/heartgold-soulsilver/back/shiny/386.png
+          test -f pokeapi-sprites/sprites/pokemon/versions/generation-iv/heartgold-soulsilver/201-z.png
+          test -f pokeapi-sprites/sprites/pokemon/versions/generation-iv/heartgold-soulsilver/back/shiny/201-question.png
+          test -f pokeapi-sprites/sprites/pokemon/versions/generation-iv/heartgold-soulsilver/10013.png
+          test -f pokeapi-sprites/sprites/pokemon/versions/generation-iv/heartgold-soulsilver/back/shiny/10015.png
 
       - name: Checkout pinned human overworld assets
         run: |
@@ -229,6 +233,7 @@ jobs:
             --rom Emerald_PTBR_HGSS_v1.4.0-dev.1.gba \
             --report rom_validation_v1.4.0-dev.1.json
           cp game/overworld_import_v1.4.0-dev.1.json .
+          cp game/form_import_v1.4.0-dev.1.json .
           python3 - <<'PY'
           import glob
           import json
@@ -326,6 +331,7 @@ jobs:
             charmap_normalization_v1.4.0-dev.1.json
             charmap_sanitizer_v1.4.0-dev.1.json
             visual_audit_v1.4.0-dev.1.json
+            form_import_v1.4.0-dev.1.json
             rom_validation_v1.4.0-dev.1.json
             mgba_smoke_validation_v1.4.0-dev.1.json
           if-no-files-found: warn
@@ -343,6 +349,7 @@ jobs:
             Emerald_PTBR_HGSS_v1.4.0-dev.1.gba
             SHA256SUMS.txt
             overworld_import_v1.4.0-dev.1.json
+            form_import_v1.4.0-dev.1.json
             translation_consistency_v1.4.0-dev.1.json
             translation_sanitizer_v1.4.0-dev.1.json
             translation_token_repair_v1.4.0-dev.1.json

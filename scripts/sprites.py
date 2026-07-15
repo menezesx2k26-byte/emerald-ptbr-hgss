@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import hashlib
+import json
+import os
 import re
 from collections import Counter, defaultdict
 from pathlib import Path
@@ -8,9 +11,21 @@ from typing import Iterable, Sequence
 from PIL import Image
 
 from common import apply_palette, gba_channel, gba_color, write_jasc
+from release import release_tag, release_version
 
 CANVAS_SIZE = 64
 MAX_OPAQUE_COLORS = 15
+UNOWN_FORM_SOURCES = {
+    "a": "201",
+    **{letter: f"201-{letter}" for letter in "bcdefghijklmnopqrstuvwxyz"},
+    "exclamation_mark": "201-exclamation",
+    "question_mark": "201-question",
+}
+CASTFORM_FORM_SOURCES = {
+    "sunny": "10013",
+    "rainy": "10014",
+    "snowy": "10015",
+}
 
 
 def prepare_rgba(path: Path) -> Image.Image:
@@ -164,46 +179,165 @@ def destination(project: Path, symbol: str) -> Path:
     return project / "graphics/pokemon" / relative
 
 
-def import_hgss_sprites(project: Path, sprites_root: Path) -> None:
+def sprite_source_paths(sprites_root: Path, source_id: str) -> dict[str, Path]:
+    return {
+        "front": sprites_root / f"{source_id}.png",
+        "back": sprites_root / "back" / f"{source_id}.png",
+        "shiny_front": sprites_root / "shiny" / f"{source_id}.png",
+        "shiny_back": sprites_root / "back/shiny" / f"{source_id}.png",
+    }
+
+
+def load_sprite_set(
+    sprites_root: Path,
+    source_id: str,
+) -> tuple[Image.Image, Image.Image, Image.Image, Image.Image]:
+    paths = sprite_source_paths(sprites_root, source_id)
+    return (
+        prepare_rgba(paths["front"]),
+        prepare_rgba(paths["back"]),
+        prepare_rgba(paths["shiny_front"]),
+        prepare_rgba(paths["shiny_back"]),
+    )
+
+
+def write_sprite_set(
+    out: Path,
+    sprites: tuple[Image.Image, Image.Image, Image.Image, Image.Image],
+    normal_palette: Sequence[tuple[int, int, int]] | None = None,
+    shiny_palette: Sequence[tuple[int, int, int]] | None = None,
+    *,
+    write_palettes: bool = True,
+) -> None:
+    normal_front, normal_back, shiny_front, shiny_back = sprites
+    normal_palette = normal_palette or build_normal_palette([normal_front, normal_back])
+    indexed_front = index_image(normal_front, normal_palette)
+    indexed_back = index_image(normal_back, normal_palette)
+    shiny_palette = shiny_palette or build_shiny_palette(
+        [normal_front, normal_back],
+        [shiny_front, shiny_back],
+        [indexed_front, indexed_back],
+        normal_palette,
+    )
+
+    out.mkdir(parents=True, exist_ok=True)
+    indexed_front.save(out / "front.png", optimize=False)
+    indexed_back.save(out / "back.png", optimize=False)
+    idle_frame = build_idle_frame(indexed_front)
+    animation = Image.new("P", (64, 128), 0)
+    animation.putpalette(indexed_front.getpalette())
+    animation.paste(indexed_front, (0, 0))
+    animation.paste(idle_frame, (0, 64))
+    animation.info["transparency"] = 0
+    animation.save(out / "anim_front.png", optimize=False)
+    if write_palettes:
+        write_jasc(out / "normal.pal", normal_palette)
+        write_jasc(out / "shiny.pal", shiny_palette)
+
+
+def file_sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def form_record(
+    project: Path,
+    sprites_root: Path,
+    family: str,
+    form: str,
+    source_id: str,
+    out: Path,
+) -> dict[str, object]:
+    sources = sprite_source_paths(sprites_root, source_id)
+    return {
+        "family": family,
+        "form": form,
+        "source_id": source_id,
+        "destination": out.relative_to(project).as_posix(),
+        "source_sha256": {name: file_sha256(path) for name, path in sources.items()},
+        "output_sha256": {
+            name: file_sha256(out / name)
+            for name in ("front.png", "back.png", "anim_front.png")
+        },
+    }
+
+
+def import_unown_forms(project: Path, sprites_root: Path) -> list[dict[str, object]]:
+    loaded = {
+        form: load_sprite_set(sprites_root, source_id)
+        for form, source_id in UNOWN_FORM_SOURCES.items()
+    }
+    normal_images = [image for sprites in loaded.values() for image in sprites[:2]]
+    shiny_images = [image for sprites in loaded.values() for image in sprites[2:]]
+    normal_palette = build_normal_palette(normal_images)
+    indexed_images = [index_image(image, normal_palette) for image in normal_images]
+    shiny_palette = build_shiny_palette(normal_images, shiny_images, indexed_images, normal_palette)
+
+    root = project / "graphics/pokemon/unown"
+    write_jasc(root / "normal.pal", normal_palette)
+    write_jasc(root / "shiny.pal", shiny_palette)
+    records: list[dict[str, object]] = []
+    for form, source_id in UNOWN_FORM_SOURCES.items():
+        out = root / form
+        write_sprite_set(
+            out,
+            loaded[form],
+            normal_palette,
+            shiny_palette,
+            write_palettes=False,
+        )
+        if form != "a":
+            records.append(form_record(project, sprites_root, "unown", form, source_id, out))
+    return records
+
+
+def import_castform_forms(project: Path, sprites_root: Path) -> list[dict[str, object]]:
+    root = project / "graphics/pokemon/castform"
+    records: list[dict[str, object]] = []
+    for form, source_id in CASTFORM_FORM_SOURCES.items():
+        out = root / form
+        write_sprite_set(out, load_sprite_set(sprites_root, source_id))
+        records.append(form_record(project, sprites_root, "castform", form, source_id, out))
+    return records
+
+
+def import_hgss_sprites(project: Path, sprites_root: Path) -> dict[str, object]:
     symbols = national_dex_symbols(project)
     required: list[Path] = []
     for dex_id in range(1, 387):
-        required.extend([
-            sprites_root / f"{dex_id}.png",
-            sprites_root / "back" / f"{dex_id}.png",
-            sprites_root / "shiny" / f"{dex_id}.png",
-            sprites_root / "back/shiny" / f"{dex_id}.png",
-        ])
+        required.extend(sprite_source_paths(sprites_root, str(dex_id)).values())
+    form_source_ids = {
+        *UNOWN_FORM_SOURCES.values(),
+        *CASTFORM_FORM_SOURCES.values(),
+    }
+    for source_id in form_source_ids:
+        required.extend(sprite_source_paths(sprites_root, source_id).values())
     missing = [str(path) for path in required if not path.exists()]
     if missing:
         raise FileNotFoundError("Missing HGSS sprites: " + ", ".join(missing[:20]))
 
     for dex_id, symbol in enumerate(symbols, 1):
-        normal_front = prepare_rgba(sprites_root / f"{dex_id}.png")
-        normal_back = prepare_rgba(sprites_root / "back" / f"{dex_id}.png")
-        shiny_front = prepare_rgba(sprites_root / "shiny" / f"{dex_id}.png")
-        shiny_back = prepare_rgba(sprites_root / "back/shiny" / f"{dex_id}.png")
-        normal_palette = build_normal_palette([normal_front, normal_back])
-        indexed_front = index_image(normal_front, normal_palette)
-        indexed_back = index_image(normal_back, normal_palette)
-        shiny_palette = build_shiny_palette(
-            [normal_front, normal_back],
-            [shiny_front, shiny_back],
-            [indexed_front, indexed_back],
-            normal_palette,
-        )
-        out = destination(project, symbol)
-        out.mkdir(parents=True, exist_ok=True)
-        indexed_front.save(out / "front.png", optimize=False)
-        indexed_back.save(out / "back.png", optimize=False)
-        idle_frame = build_idle_frame(indexed_front)
-        animation = Image.new("P", (64, 128), 0)
-        animation.putpalette(indexed_front.getpalette())
-        animation.paste(indexed_front, (0, 0))
-        animation.paste(idle_frame, (0, 64))
-        animation.info["transparency"] = 0
-        animation.save(out / "anim_front.png", optimize=False)
-        write_jasc(out / "normal.pal", normal_palette)
-        write_jasc(out / "shiny.pal", shiny_palette)
+        if symbol != "UNOWN":
+            write_sprite_set(destination(project, symbol), load_sprite_set(sprites_root, str(dex_id)))
         if dex_id % 25 == 0 or dex_id == 386:
             print(f"HGSS sprites: {dex_id}/386")
+
+    forms = [
+        *import_unown_forms(project, sprites_root),
+        *import_castform_forms(project, sprites_root),
+    ]
+    report: dict[str, object] = {
+        "version": release_version(),
+        "source": "PokeAPI/sprites generation-iv/heartgold-soulsilver",
+        "source_revision": os.environ.get("POKEAPI_SPRITES_SHA", "unknown"),
+        "primary_species_imported": len(symbols),
+        "alternative_forms_imported": len(forms),
+        "unown_shared_palette": True,
+        "castform_per_form_palettes": True,
+        "forms": forms,
+    }
+    (project / f"form_import_{release_tag()}.json").write_text(
+        json.dumps(report, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+    print(f"HGSS alternative forms: {len(forms)}/30")
+    return report

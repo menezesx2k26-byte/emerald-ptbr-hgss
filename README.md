@@ -11,8 +11,14 @@ um movimento ocioso sutil, de um pixel, no segundo. A auditoria bloqueia o
 build se algum quadro continuar duplicado ou se o primeiro deixar de coincidir
 com o sprite frontal importado.
 
-As próximas entregas são as formas alternativas de Unown/Castform e a troca
-dos quatro tilesets-piloto por arte própria, em vez de apenas paletas derivadas
+A segunda entrega importa as 27 formas alternativas de Unown e Castform Sunny,
+Rainy e Snowy da mesma coleção HGSS fixada por commit. Unown usa a paleta
+compartilhada esperada pelo motor; cada forma climática de Castform preserva
+seu próprio par normal/shiny. O relatório registra a procedência e os hashes e
+audita os 30 conjuntos antes da compilação.
+
+As próximas entregas são validar a troca dessas formas em batalha e substituir
+os quatro tilesets-piloto por arte própria, em vez de apenas paletas derivadas
 de Emerald. O escopo e os critérios estão em [`V1.4_ROADMAP.md`](V1.4_ROADMAP.md).
 
 ## Estado da v1.3.1
