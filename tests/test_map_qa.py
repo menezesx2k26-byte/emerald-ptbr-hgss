@@ -18,6 +18,7 @@ from instrument_map_qa import (  # noqa: E402
     OVERWORLD_MARKER,
     instrument_project,
 )
+from compose_map_qa_sheet import compose  # noqa: E402
 from patch_mgba_headless_video import MARKER as MGBA_VIDEO_MARKER, patch_source  # noqa: E402
 from release import release_version  # noqa: E402
 from validate_map_qa import EXPECTED_CASES, validate  # noqa: E402
@@ -153,6 +154,9 @@ argsExit:
             report = validate(raw, root)
             self.assertTrue(report["valid"])
             self.assertTrue(all(report["checks"].values()))
+            sheet = compose(root, root / "contact-sheet.png")
+            with Image.open(sheet) as image:
+                self.assertEqual(image.size, (480, 320))
 
     def test_rejects_duplicate_runtime_screenshot(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

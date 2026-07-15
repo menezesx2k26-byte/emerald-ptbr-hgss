@@ -412,6 +412,10 @@ jobs:
             --raw-report map-qa/mgba_map_qa_raw.json \
             --screenshots map-qa \
             --report map_qa_validation_v1.4.0-dev.1.json
+          python3 scripts/compose_map_qa_sheet.py \
+            --screenshots map-qa \
+            --output map-qa/map_qa_contact_sheet.png \
+            --emit-base64
           sha256sum --check SHA256SUMS.txt
 
       - name: Restore clean sources after map QA instrumentation
