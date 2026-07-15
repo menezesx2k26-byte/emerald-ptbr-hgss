@@ -145,6 +145,7 @@ def main() -> None:
     c_files = [path for path in c_files if path.exists()]
 
     report: dict[str, object] = {
+        'version': '1.3.1',
         'normalized_characters': 0,
         'reverted_strings': 0,
         'unsupported_characters': {},
@@ -166,7 +167,7 @@ def main() -> None:
                 remaining.append({'file': path.relative_to(project).as_posix(), 'characters': bad})
                 break
     report['remaining_problems'] = remaining
-    report_path = args.report or project / 'charmap_sanitizer_v1.3.json'
+    report_path = args.report or project / 'charmap_sanitizer_v1.3.1.json'
     report_path.write_text(json.dumps(report, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')
     print(json.dumps(report, indent=2, ensure_ascii=False))
     if remaining:

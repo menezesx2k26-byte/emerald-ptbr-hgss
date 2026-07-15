@@ -159,7 +159,7 @@ def main() -> None:
             break
 
     report = {
-        "version": "1.3",
+        "version": "1.3.1",
         "blocks_or_strings_restored": sum(len(item["repairs"]) for item in changed),
         "files_changed": len(changed),
         "changes": changed,
@@ -167,7 +167,7 @@ def main() -> None:
         "valid": not remaining,
         "policy": "Corrupted placeholder tokens fall back to the original source text.",
     }
-    report_path = args.report or project / "translation_token_repair_v1.3.json"
+    report_path = args.report or project / "translation_token_repair_v1.3.1.json"
     report_path.write_text(
         json.dumps(report, indent=2, ensure_ascii=False) + "\n",
         encoding="utf-8",

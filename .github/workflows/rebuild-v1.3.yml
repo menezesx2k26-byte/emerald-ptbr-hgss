@@ -1,4 +1,4 @@
-name: Rebuild Emerald PT-BR HGSS v1.3
+name: Rebuild Emerald PT-BR HGSS v1.3.1
 
 on:
   workflow_dispatch:
@@ -6,16 +6,47 @@ on:
     branches: [main]
     paths:
       - ".github/workflows/rebuild-v1.3.yml"
-      - "scripts/sanitize_translated_text.py"
-      - "scripts/sanitize_display_quotes.py"
-      - "scripts/sanitize_charmap_text.py"
+      - "scripts/**"
+      - "tests/**"
+      - "translation/**"
+      - "QA_CHECKLIST_v1.3.1.md"
+      - "README.md"
 
 permissions:
   contents: read
-  actions: read
+
+concurrency:
+  group: emerald-ptbr-hgss-v1.3.1-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  BASE_REPOSITORY: https://github.com/lucmsilva651/esmeralda-ptbr.git
+  BASE_SHA: 16899178c5d9b198b961c3e38389ccccbdff7836
+  POKEAPI_SPRITES_SHA: bf4c47ac82c33b330e33d98b8882d1cedb2f53e7
+  TEAM_AQUA_ASSETS_SHA: 36b619ecd1d2df95212b375c95803af78414f78a
+  AGBCC_SHA: da598c1d918402c42c0c0d7128ba14567f3175e9
+  MGBA_SHA: 5157ce208a5965e8a47bf5b48b5aae5198c22a5e
 
 jobs:
+  quality:
+    name: Validate integration scripts
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout integration scripts
+        uses: actions/checkout@v4
+
+      - name: Install test dependencies
+        run: python3 -m pip install pillow
+
+      - name: Run unit tests
+        run: python3 -m unittest discover -s tests -v
+
+      - name: Compile-check Python scripts
+        run: python3 -m compileall -q scripts tests
+
   rebuild:
+    name: Build playable ROM
+    needs: quality
     runs-on: ubuntu-latest
     timeout-minutes: 60
 
@@ -30,23 +61,27 @@ jobs:
             build-essential \
             gcc-arm-none-eabi \
             binutils-arm-none-eabi \
+            cmake \
+            ninja-build \
             libpng-dev \
+            liblua5.4-dev \
+            zlib1g-dev \
             python3-pil \
             git
 
       - name: Checkout pinned PT-BR source
         run: |
-          git clone --filter=blob:none https://github.com/lucmsilva651/esmeralda-ptbr.git game
-          git -C game checkout 16899178c5d9b198b961c3e38389ccccbdff7836
+          git clone --filter=blob:none --no-checkout "$BASE_REPOSITORY" game
+          git -C game checkout --detach "$BASE_SHA"
+          test "$(git -C game rev-parse HEAD)" = "$BASE_SHA"
 
-      - name: Download completed translation shards
-        uses: actions/download-artifact@v4
-        with:
-          pattern: translation-shard-*
-          path: translation-output
-          merge-multiple: true
-          run-id: 29142865485
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Restore versioned translation shards
+        run: |
+          mkdir translation-output
+          cp translation/v1.3/translation-shard-*.json translation-output/
+          cp translation/v1.3/translation-shard-*.patch.gz translation-output/
+          gzip -d translation-output/translation-shard-*.patch.gz
+          test "$(find translation-output -name 'translation-shard-*.patch' | wc -l)" -eq 4
 
       - name: Apply PT-BR translation patches
         run: |
@@ -54,111 +89,269 @@ jobs:
             echo "Applying ${patch}"
             git -C game apply --whitespace=nowarn "$GITHUB_WORKSPACE/$patch"
           done
+          test "$(find translation-output -name 'translation-shard-*.patch' | wc -l)" -eq 4
 
       - name: Sanitize translated text
         run: |
           python3 scripts/sanitize_translated_text.py \
             --project game \
-            --report translation_sanitizer_v1.3.json
+            --report translation_sanitizer_v1.3.1.json
+
+      - name: Repair corrupted translation tokens
+        run: |
+          python3 scripts/repair_translation_tokens.py \
+            --project game \
+            --report translation_token_repair_v1.3.1.json
+
+      - name: Apply reviewed PT-BR dialogue fixes
+        run: |
+          python3 scripts/apply_manual_ptbr_fixes.py \
+            --project game \
+            --report manual_ptbr_fixes_v1.3.1.json
 
       - name: Normalize display quotes
         run: |
           python3 scripts/sanitize_display_quotes.py \
             --project game \
-            --report display_quote_sanitizer_v1.3.json
+            --report display_quote_sanitizer_v1.3.1.json
 
-      - name: Audit translated text against charmap
+      - name: Normalize and validate PT-BR charmap
         run: |
+          python3 scripts/normalize_charmap_ptbr.py \
+            --project game \
+            --report charmap_normalization_v1.3.1.json
           python3 scripts/sanitize_charmap_text.py \
             --project game \
-            --report charmap_sanitizer_v1.3.json
+            --report charmap_sanitizer_v1.3.1.json
 
-      - name: Checkout only HGSS Pokémon sprite assets
+      - name: Checkout pinned HGSS Pokémon sprite assets
         run: |
-          git clone --depth 1 --filter=blob:none --sparse https://github.com/PokeAPI/sprites.git pokeapi-sprites
-          git -C pokeapi-sprites sparse-checkout set sprites/pokemon/versions/generation-iv/heartgold-soulsilver
+          git clone --filter=blob:none --no-checkout \
+            https://github.com/PokeAPI/sprites.git pokeapi-sprites
+          git -C pokeapi-sprites sparse-checkout init --cone
+          git -C pokeapi-sprites sparse-checkout set \
+            sprites/pokemon/versions/generation-iv/heartgold-soulsilver
+          git -C pokeapi-sprites checkout --detach "$POKEAPI_SPRITES_SHA"
+          test "$(git -C pokeapi-sprites rev-parse HEAD)" = "$POKEAPI_SPRITES_SHA"
+          test -f pokeapi-sprites/sprites/pokemon/versions/generation-iv/heartgold-soulsilver/1.png
+          test -f pokeapi-sprites/sprites/pokemon/versions/generation-iv/heartgold-soulsilver/back/shiny/386.png
 
-      - name: Checkout converted human overworld assets
+      - name: Checkout pinned human overworld assets
         run: |
-          git clone --depth 1 --filter=blob:none --sparse https://github.com/TeamAquasHideout/Team-Aquas-Asset-Repo.git team-aqua-assets
-          git -C team-aqua-assets sparse-checkout set "Overworld Trainer Sprites/RavePossum/Poffin-Case-Overworlds-Converted"
+          git clone --filter=blob:none --no-checkout \
+            https://github.com/TeamAquasHideout/Team-Aquas-Asset-Repo.git team-aqua-assets
+          git -C team-aqua-assets sparse-checkout init --cone
+          git -C team-aqua-assets sparse-checkout set \
+            "Overworld Trainer Sprites/RavePossum/Poffin-Case-Overworlds-Converted"
+          git -C team-aqua-assets checkout --detach "$TEAM_AQUA_ASSETS_SHA"
+          test "$(git -C team-aqua-assets rev-parse HEAD)" = "$TEAM_AQUA_ASSETS_SHA"
+          test -f "team-aqua-assets/Overworld Trainer Sprites/RavePossum/Poffin-Case-Overworlds-Converted/brendan/walking.png"
+          test -f "team-aqua-assets/Overworld Trainer Sprites/RavePossum/Poffin-Case-Overworlds-Converted/youngster.png"
 
-      - name: Apply HGSS visual overhaul v1.3
+      - name: Apply visual overhaul v1.3.1
         run: |
           python3 scripts/apply_overhaul.py \
             --project game \
             --sprites-root pokeapi-sprites/sprites/pokemon/versions/generation-iv/heartgold-soulsilver \
             --overworlds-root "team-aqua-assets/Overworld Trainer Sprites/RavePossum/Poffin-Case-Overworlds-Converted"
 
-      - name: Build and install agbcc
+      - name: Audit imported visual assets
         run: |
-          git clone --depth 1 https://github.com/pret/agbcc.git agbcc
+          python3 scripts/audit_visual_assets.py \
+            --project game \
+            --report visual_audit_v1.3.1.json
+
+      - name: Build and install pinned agbcc
+        run: |
+          git clone --filter=blob:none --no-checkout https://github.com/pret/agbcc.git agbcc
+          git -C agbcc checkout --detach "$AGBCC_SHA"
+          test "$(git -C agbcc rev-parse HEAD)" = "$AGBCC_SHA"
           cd agbcc
           ./build.sh
           ./install.sh ../game
+
+      - name: Build pinned mGBA headless
+        run: |
+          git clone --filter=blob:none --no-checkout https://github.com/mgba-emu/mgba.git mgba
+          git -C mgba checkout --detach "$MGBA_SHA"
+          test "$(git -C mgba rev-parse HEAD)" = "$MGBA_SHA"
+          cmake -S mgba -B mgba-build -G Ninja \
+            -DBUILD_HEADLESS=ON \
+            -DBUILD_QT=OFF \
+            -DBUILD_SDL=OFF \
+            -DBUILD_GL=OFF \
+            -DBUILD_GLES2=OFF \
+            -DBUILD_GLES3=OFF \
+            -DBUILD_SHARED=OFF \
+            -DBUILD_STATIC=ON \
+            -DM_CORE_GB=OFF \
+            -DENABLE_DEBUGGERS=OFF \
+            -DENABLE_GDB_STUB=OFF \
+            -DENABLE_SCRIPTING=ON \
+            -DUSE_LUA=5.4 \
+            -DUSE_PNG=ON \
+            -DUSE_ZLIB=ON \
+            -DUSE_FFMPEG=OFF \
+            -DUSE_LIBZIP=OFF \
+            -DUSE_SQLITE3=OFF \
+            -DUSE_ELF=OFF \
+            -DUSE_EDITLINE=OFF \
+            -DUSE_FREETYPE=OFF \
+            -DUSE_DISCORD_RPC=OFF \
+            -DUSE_LZMA=OFF \
+            -DUSE_MINIZIP=OFF \
+            -DUSE_JSON_C=OFF
+          cmake --build mgba-build --target mgba-headless
+          test -x mgba-build/mgba-headless
 
       - name: Build ROM with full diagnostics
         id: buildrom
         continue-on-error: true
         run: |
           set -o pipefail
-          make -j"$(nproc)" all 2>&1 | tee "$GITHUB_WORKSPACE/build-v1.3.log"
+          make -j"$(nproc)" all 2>&1 | tee "$GITHUB_WORKSPACE/build-v1.3.1.log"
         working-directory: game
         env:
           MODERN: "1"
           COMPARE: "0"
 
-      - name: Upload build diagnostics
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-diagnostics-v1.3
-          path: |
-            build-v1.3.log
-            translation_sanitizer_v1.3.json
-            display_quote_sanitizer_v1.3.json
-            charmap_sanitizer_v1.3.json
-          if-no-files-found: error
-          retention-days: 7
-
       - name: Stop on build failure
         if: steps.buildrom.outcome != 'success'
         run: exit 1
 
-      - name: Prepare artifact
+      - name: Prepare and validate artifact
         run: |
           test -f game/pokeemerald_modern.gba
-          cp game/pokeemerald_modern.gba Emerald_PTBR_HGSS_v1.3.gba
-          sha256sum Emerald_PTBR_HGSS_v1.3.gba | tee SHA256SUMS.txt
-          cp game/overworld_import_v1.3.json .
+          cp game/pokeemerald_modern.gba Emerald_PTBR_HGSS_v1.3.1.gba
+          sha256sum Emerald_PTBR_HGSS_v1.3.1.gba | tee SHA256SUMS.txt
+          python3 scripts/validate_rom.py \
+            --rom Emerald_PTBR_HGSS_v1.3.1.gba \
+            --report rom_validation_v1.3.1.json
+          cp game/overworld_import_v1.3.1.json .
           python3 - <<'PY'
-          import glob, json
+          import glob
+          import json
           from pathlib import Path
-          reports=[json.loads(Path(p).read_text(encoding='utf-8')) for p in sorted(glob.glob('translation-output/translation-shard-*.json'))]
-          summary={
-            'version':'1.3',
-            'shards':len(reports),
-            'text_segments_translated':sum(r['text_segments_translated'] for r in reports),
-            'files_changed':sum(r['files_changed'] for r in reports),
-            'assembly_blocks_translated':sum(r['assembly_blocks_translated'] for r in reports),
-            'c_strings_translated':sum(r['c_strings_translated'] for r in reports),
-            'move_names_policy':'English move names and descriptions preserved',
-            'excluded_move_files':['src/data/text/move_names.h','src/data/text/move_descriptions.h'],
+
+          reports = [
+              json.loads(Path(path).read_text(encoding="utf-8"))
+              for path in sorted(glob.glob("translation-output/translation-shard-*.json"))
+          ]
+          summary = {
+              "version": "1.3.1",
+              "shards": len(reports),
+              "text_segments_translated": sum(item["text_segments_translated"] for item in reports),
+              "files_changed": sum(item["files_changed"] for item in reports),
+              "assembly_blocks_translated": sum(item["assembly_blocks_translated"] for item in reports),
+              "c_strings_translated": sum(item["c_strings_translated"] for item in reports),
+              "reviewed_ptbr_fixes": 15,
+              "move_names_policy": "English move names and descriptions preserved",
+              "excluded_move_files": [
+                  "src/data/text/move_names.h",
+                  "src/data/text/move_descriptions.h",
+              ],
           }
-          Path('translation_consistency_v1.3.json').write_text(json.dumps(summary,indent=2,ensure_ascii=False)+'\n',encoding='utf-8')
+          Path("translation_consistency_v1.3.1.json").write_text(
+              json.dumps(summary, indent=2, ensure_ascii=False) + "\n",
+              encoding="utf-8",
+          )
           PY
+
+      - name: Run headless mGBA boot and video-memory smoke test
+        id: mgba_smoke
+        continue-on-error: true
+        env:
+          MGBA_SMOKE_OUTPUT: ${{ github.workspace }}/mgba-smoke
+        run: |
+          mkdir -p "$MGBA_SMOKE_OUTPUT"
+          mgba-build/mgba-headless \
+            --script "$GITHUB_WORKSPACE/scripts/mgba_smoke.lua" \
+            "$GITHUB_WORKSPACE/Emerald_PTBR_HGSS_v1.3.1.gba" \
+            >mgba-smoke-v1.3.1.log 2>&1 &
+          mgba_pid=$!
+
+          complete=false
+          for _ in $(seq 1 300); do
+            if [[ -s "$MGBA_SMOKE_OUTPUT/mgba_smoke_raw.json" ]]; then
+              complete=true
+              break
+            fi
+            if ! kill -0 "$mgba_pid" 2>/dev/null; then
+              wait_status=0
+              wait "$mgba_pid" || wait_status=$?
+              cat mgba-smoke-v1.3.1.log
+              if [[ "$wait_status" -eq 0 ]]; then
+                wait_status=1
+              fi
+              exit "$wait_status"
+            fi
+            sleep 0.1
+          done
+
+          if [[ "$complete" != true ]]; then
+            kill -INT "$mgba_pid" 2>/dev/null || true
+            wait "$mgba_pid" || true
+            cat mgba-smoke-v1.3.1.log
+            echo "mGBA smoke report was not produced within 30 seconds"
+            exit 1
+          fi
+
+          kill -INT "$mgba_pid"
+          wait_status=0
+          wait "$mgba_pid" || wait_status=$?
+          cat mgba-smoke-v1.3.1.log
+          if [[ "$wait_status" -ne 0 ]]; then
+            exit "$wait_status"
+          fi
+
+          python3 scripts/validate_mgba_smoke.py \
+            --raw-report mgba-smoke/mgba_smoke_raw.json \
+            --report mgba_smoke_validation_v1.3.1.json
+
+      - name: Upload build and emulator diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-diagnostics-v1.3.1
+          path: |
+            build-v1.3.1.log
+            mgba-smoke-v1.3.1.log
+            mgba-smoke/
+            translation_sanitizer_v1.3.1.json
+            translation_token_repair_v1.3.1.json
+            manual_ptbr_fixes_v1.3.1.json
+            display_quote_sanitizer_v1.3.1.json
+            charmap_normalization_v1.3.1.json
+            charmap_sanitizer_v1.3.1.json
+            visual_audit_v1.3.1.json
+            rom_validation_v1.3.1.json
+            mgba_smoke_validation_v1.3.1.json
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Stop on mGBA smoke failure
+        if: steps.buildrom.outcome == 'success' && steps.mgba_smoke.outcome != 'success'
+        run: exit 1
 
       - name: Upload playable ROM
         uses: actions/upload-artifact@v4
         with:
-          name: Emerald-PTBR-HGSS-v1.3
+          name: Emerald-PTBR-HGSS-v1.3.1
           path: |
-            Emerald_PTBR_HGSS_v1.3.gba
+            Emerald_PTBR_HGSS_v1.3.1.gba
             SHA256SUMS.txt
-            overworld_import_v1.3.json
-            translation_consistency_v1.3.json
-            translation_sanitizer_v1.3.json
-            display_quote_sanitizer_v1.3.json
-            charmap_sanitizer_v1.3.json
+            overworld_import_v1.3.1.json
+            translation_consistency_v1.3.1.json
+            translation_sanitizer_v1.3.1.json
+            translation_token_repair_v1.3.1.json
+            manual_ptbr_fixes_v1.3.1.json
+            display_quote_sanitizer_v1.3.1.json
+            charmap_normalization_v1.3.1.json
+            charmap_sanitizer_v1.3.1.json
+            visual_audit_v1.3.1.json
+            rom_validation_v1.3.1.json
+            mgba_smoke_validation_v1.3.1.json
+            mgba-smoke/mgba_smoke_raw.json
+            QA_CHECKLIST_v1.3.1.md
           if-no-files-found: error
           retention-days: 30

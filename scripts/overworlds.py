@@ -63,6 +63,7 @@ def import_overworld_sprites(project: Path, assets_root: Path) -> dict[str, obje
     field_effect.write_text(text, encoding="utf-8")
 
     report: dict[str, object] = {
+        "version": "1.3.1",
         "source": "Team Aqua Asset Repo / RavePossum / Poffin-Case-Overworlds-Converted",
         "copied_count": len(copied),
         "copied": copied,
@@ -73,7 +74,7 @@ def import_overworld_sprites(project: Path, assets_root: Path) -> dict[str, obje
         "fly_animation_alignment_patched": True,
         "palette_strategy": "vanilla shared palettes preserved",
     }
-    (project / "overworld_import_v1.3.json").write_text(
+    (project / "overworld_import_v1.3.1.json").write_text(
         json.dumps(report, indent=2, ensure_ascii=False) + "\n",
         encoding="utf-8",
     )
