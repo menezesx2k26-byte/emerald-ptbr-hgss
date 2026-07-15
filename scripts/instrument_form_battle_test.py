@@ -103,6 +103,7 @@ EWRAM_DATA u8 gFormBattleTestOpponentResult = 0;
 EWRAM_DATA u8 gFormBattleTestError = 0;
 EWRAM_DATA u8 gFormBattleTestBackPaletteNum = 0;
 EWRAM_DATA u8 gFormBattleTestFrontPaletteNum = 0;
+EWRAM_DATA u16 gFormBattleTestReadyMask = 0;
 EWRAM_DATA u16 gFormBattleTestBackTileNum = 0;
 EWRAM_DATA u16 gFormBattleTestFrontTileNum = 0;
 EWRAM_DATA u16 gFormBattleTestBackSpecies = 0;
@@ -128,27 +129,39 @@ static bool8 FormBattleTestSpritesReady(u8 player, u8 opponent)
     u8 playerPosition = GetBattlerPosition(player);
     u8 opponentPosition = GetBattlerPosition(opponent);
 
-    if (gBattlersCount != 2
-     || gBattleMons[player].species != SPECIES_CASTFORM
-     || gBattleMons[opponent].species != SPECIES_CASTFORM
-     || playerSpriteId >= MAX_SPRITES
-     || opponentSpriteId >= MAX_SPRITES)
+    gFormBattleTestReadyMask = 0;
+    if (gBattlersCount != 2)
         return FALSE;
+    gFormBattleTestReadyMask |= 1;
 
-    if (!gSprites[playerSpriteId].inUse
-     || !gSprites[opponentSpriteId].inUse
-     || gSprites[playerSpriteId].invisible
-     || gSprites[opponentSpriteId].invisible)
+    if (gBattleMons[player].species != SPECIES_CASTFORM
+     || gBattleMons[opponent].species != SPECIES_CASTFORM)
         return FALSE;
+    gFormBattleTestReadyMask |= 2;
+
+    if (playerSpriteId >= MAX_SPRITES || opponentSpriteId >= MAX_SPRITES)
+        return FALSE;
+    gFormBattleTestReadyMask |= 4;
+
+    if (!gSprites[playerSpriteId].inUse || !gSprites[opponentSpriteId].inUse)
+        return FALSE;
+    gFormBattleTestReadyMask |= 8;
 
     // During the opening sequence gBattlerSpriteIds[player] still identifies
-    // the trainer back sprite. Wait until both IDs refer to the actual Pokémon
-    // templates and their species metadata has been installed.
+    // the trainer back sprite. The image pointers switch to the battle Pokémon
+    // buffers as soon as both actual battler sprites are allocated. Visibility
+    // and data fields are transient during the Poké Ball animation, so the
+    // harness waits another 120 frames and normalizes them before sampling.
     if (gSprites[playerSpriteId].images != gMonSpritesGfxPtr->frameImages[playerPosition]
-     || gSprites[opponentSpriteId].images != gMonSpritesGfxPtr->frameImages[opponentPosition]
-     || gSprites[playerSpriteId].data[2] != SPECIES_CASTFORM
-     || gSprites[opponentSpriteId].data[2] != SPECIES_CASTFORM)
+     || gSprites[opponentSpriteId].images != gMonSpritesGfxPtr->frameImages[opponentPosition])
         return FALSE;
+    gFormBattleTestReadyMask |= 16;
+
+    if (!gSprites[playerSpriteId].invisible && !gSprites[opponentSpriteId].invisible)
+        gFormBattleTestReadyMask |= 32;
+    if (gSprites[playerSpriteId].data[2] == SPECIES_CASTFORM
+     && gSprites[opponentSpriteId].data[2] == SPECIES_CASTFORM)
+        gFormBattleTestReadyMask |= 64;
 
     return TRUE;
 }

@@ -20,6 +20,7 @@ local required_symbols = {
     "gFormBattleTestError",
     "gFormBattleTestBackPaletteNum",
     "gFormBattleTestFrontPaletteNum",
+    "gFormBattleTestReadyMask",
     "gFormBattleTestBackTileNum",
     "gFormBattleTestFrontTileNum",
     "gFormBattleTestBackSpecies",
@@ -137,6 +138,7 @@ local function write_report(status, crashed)
     file:write(string.format('  "frames_reached": %d,\n', emu:currentFrame()))
     file:write(string.format('  "final_state": %d,\n', emu:read8(symbols.gFormBattleTestState)))
     file:write(string.format('  "final_error": %d,\n', emu:read8(symbols.gFormBattleTestError)))
+    file:write(string.format('  "final_ready_mask": %d,\n', emu:read16(symbols.gFormBattleTestReadyMask)))
     file:write('  "case_samples": [\n')
     for index, sample in ipairs(samples) do
         file:write(string.format(
