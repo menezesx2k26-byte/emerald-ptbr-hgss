@@ -2,7 +2,6 @@ local output_dir = os.getenv("MGBA_SMOKE_OUTPUT") or "."
 local report_path = output_dir .. "/mgba_smoke_raw.json"
 local targets = {120, 600, 900}
 local samples = {}
-local screenshots = {}
 local captured = {}
 local finished = false
 local frame_callback = nil
@@ -17,14 +16,17 @@ local function json_escape(value)
 end
 
 
-local function vram_nonzero_samples()
+local function memory_sample(first, last, step)
     local count = 0
-    for address = 0x06000000, 0x06017FFE, 0x100 do
-        if emu:read16(address) ~= 0 then
+    local signature = 2166136261
+    for address = first, last, step do
+        local value = emu:read16(address)
+        if value ~= 0 then
             count = count + 1
         end
+        signature = ((signature ~ value) * 16777619) & 0x7FFFFFFF
     end
-    return count
+    return count, signature
 end
 
 
@@ -42,33 +44,23 @@ local function write_report(status, crashed)
     file:write('  "frame_samples": [\n')
     for index, sample in ipairs(samples) do
         file:write(string.format(
-            '    {"frame": %d, "vram_nonzero_samples": %d, "pc": %d}%s\n',
+            '    {"frame": %d, "vram_nonzero_samples": %d, "vram_signature": %d, '
+                .. '"palette_nonzero_samples": %d, "palette_signature": %d, '
+                .. '"oam_nonzero_samples": %d, "oam_signature": %d, "pc": %d}%s\n',
             sample.frame,
             sample.vram_nonzero_samples,
+            sample.vram_signature,
+            sample.palette_nonzero_samples,
+            sample.palette_signature,
+            sample.oam_nonzero_samples,
+            sample.oam_signature,
             sample.pc,
             index < #samples and "," or ""
         ))
     end
-    file:write('  ],\n')
-    file:write('  "screenshots": [')
-    for index, screenshot in ipairs(screenshots) do
-        file:write(string.format('"%s"%s', json_escape(screenshot), index < #screenshots and ", " or ""))
-    end
-    file:write(']\n')
+    file:write('  ]\n')
     file:write("}\n")
     file:close()
-end
-
-
-local function request_clean_exit()
-    local exit_stub = 0x03007E00
-    local cpsr = emu:readRegister("cpsr")
-    if (cpsr & 0x20) ~= 0 then
-        emu:write16(exit_stub, 0xDF03)
-    else
-        emu:write32(exit_stub, 0xEF000003)
-    end
-    emu:writeRegister("pc", exit_stub)
 end
 
 
@@ -81,7 +73,6 @@ local function finish(status, crashed)
     if frame_callback then
         callbacks:remove(frame_callback)
     end
-    request_clean_exit()
 end
 
 
@@ -94,12 +85,17 @@ frame_callback = callbacks:add("frame", function()
     local frame = emu:currentFrame()
     for _, target in ipairs(targets) do
         if frame >= target and not captured[target] then
-            local filename = string.format("mgba-frame-%04d.png", target)
-            emu:screenshot(output_dir .. "/" .. filename)
-            table.insert(screenshots, filename)
+            local vram_nonzero, vram_signature = memory_sample(0x06000000, 0x06017FFE, 0x80)
+            local palette_nonzero, palette_signature = memory_sample(0x05000000, 0x050003FE, 2)
+            local oam_nonzero, oam_signature = memory_sample(0x07000000, 0x070003FE, 2)
             table.insert(samples, {
                 frame = frame,
-                vram_nonzero_samples = vram_nonzero_samples(),
+                vram_nonzero_samples = vram_nonzero,
+                vram_signature = vram_signature,
+                palette_nonzero_samples = palette_nonzero,
+                palette_signature = palette_signature,
+                oam_nonzero_samples = oam_nonzero,
+                oam_signature = oam_signature,
                 pc = emu:readRegister("pc"),
             })
             captured[target] = true

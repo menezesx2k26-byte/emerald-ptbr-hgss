@@ -20,8 +20,8 @@ direção visual inspirada em HeartGold/SoulSilver.
   commit; os patches de tradução concluídos também ficam versionados.
 - auditoria automática de 386 conjuntos de sprites, 129 overworlds, 16 assets
   de água/efeitos, quatro layouts, charmap e cabeçalho/checksum da ROM.
-- smoke test no `mgba-headless` fixado por commit: 900 frames, amostragem de
-  VRAM e três screenshots validados contra tela vazia ou congelada.
+- smoke test no `mgba-headless` fixado por commit: 900 frames e assinaturas de
+  VRAM, paleta e OAM validadas contra vídeo vazio ou congelado.
 
 ## Limites conhecidos
 
@@ -45,7 +45,8 @@ O workflow `Rebuild Emerald PT-BR HGSS v1.3.1` aplica, nesta ordem:
 4. overhaul visual e auditoria dos assets;
 5. compilação com `agbcc` fixado por commit;
 6. validação estrutural da ROM de 16 MiB;
-7. boot automatizado no mGBA headless com validação de frames, VRAM e imagens.
+7. boot automatizado no mGBA headless com validação de frames, memória de vídeo
+   e fluxo de execução.
 
 O smoke test detecta ROM que não abre, trava ou deixa de renderizar. Ele não
 substitui o playtest humano de diálogos, colisões, transições, batalhas e

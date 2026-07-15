@@ -14,8 +14,8 @@ backlog artístico da v1.4.
 
 - [ ] P0 — ROM com 16 MiB, cabeçalho `POKEMON EMER`, código `BPEE` e checksum válido.
 - [ ] P0 — mGBA headless chega a pelo menos 900 frames sem crash.
-- [ ] P0 — VRAM contém dados nos três pontos de amostragem.
-- [ ] P0 — três screenshots de 240×160 são produzidos e pelo menos dois são diferentes.
+- [ ] P0 — VRAM e paleta contêm dados nos três pontos de amostragem.
+- [ ] P0 — assinaturas combinadas de VRAM, paleta e OAM mudam durante o boot.
 - [ ] P0 — 386 conjuntos de sprites de batalha passam na auditoria de formato/paleta.
 - [ ] P0 — 129 overworlds são importados sem arquivos pulados.
 

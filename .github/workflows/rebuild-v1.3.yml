@@ -257,22 +257,55 @@ jobs:
           )
           PY
 
-      - name: Run headless mGBA boot and render smoke test
+      - name: Run headless mGBA boot and video-memory smoke test
         id: mgba_smoke
         continue-on-error: true
         env:
           MGBA_SMOKE_OUTPUT: ${{ github.workspace }}/mgba-smoke
         run: |
           mkdir -p "$MGBA_SMOKE_OUTPUT"
-          set -o pipefail
-          timeout --preserve-status --signal=INT --kill-after=5s 30s \
-            mgba-build/mgba-headless \
+          mgba-build/mgba-headless \
             --script "$GITHUB_WORKSPACE/scripts/mgba_smoke.lua" \
             "$GITHUB_WORKSPACE/Emerald_PTBR_HGSS_v1.3.1.gba" \
-            2>&1 | tee mgba-smoke-v1.3.1.log
+            >mgba-smoke-v1.3.1.log 2>&1 &
+          mgba_pid=$!
+
+          complete=false
+          for _ in $(seq 1 300); do
+            if [[ -s "$MGBA_SMOKE_OUTPUT/mgba_smoke_raw.json" ]]; then
+              complete=true
+              break
+            fi
+            if ! kill -0 "$mgba_pid" 2>/dev/null; then
+              wait_status=0
+              wait "$mgba_pid" || wait_status=$?
+              cat mgba-smoke-v1.3.1.log
+              if [[ "$wait_status" -eq 0 ]]; then
+                wait_status=1
+              fi
+              exit "$wait_status"
+            fi
+            sleep 0.1
+          done
+
+          if [[ "$complete" != true ]]; then
+            kill -INT "$mgba_pid" 2>/dev/null || true
+            wait "$mgba_pid" || true
+            cat mgba-smoke-v1.3.1.log
+            echo "mGBA smoke report was not produced within 30 seconds"
+            exit 1
+          fi
+
+          kill -INT "$mgba_pid"
+          wait_status=0
+          wait "$mgba_pid" || wait_status=$?
+          cat mgba-smoke-v1.3.1.log
+          if [[ "$wait_status" -ne 0 ]]; then
+            exit "$wait_status"
+          fi
+
           python3 scripts/validate_mgba_smoke.py \
             --raw-report mgba-smoke/mgba_smoke_raw.json \
-            --screenshots-dir mgba-smoke \
             --report mgba_smoke_validation_v1.3.1.json
 
       - name: Upload build and emulator diagnostics
@@ -319,7 +352,6 @@ jobs:
             rom_validation_v1.3.1.json
             mgba_smoke_validation_v1.3.1.json
             mgba-smoke/mgba_smoke_raw.json
-            mgba-smoke/mgba-frame-*.png
             QA_CHECKLIST_v1.3.1.md
           if-no-files-found: error
           retention-days: 30

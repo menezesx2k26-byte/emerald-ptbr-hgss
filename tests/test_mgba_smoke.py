@@ -6,45 +6,38 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from PIL import Image
-
-
 SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
 from validate_mgba_smoke import validate  # noqa: E402
 
 
-def make_frame(path: Path, offset: int) -> None:
-    image = Image.new("RGB", (240, 160))
-    image.putdata(
-        [
-            ((x + offset) % 256, (y * 2 + offset) % 256, (x + y + offset) % 256)
-            for y in range(160)
-            for x in range(240)
-        ]
-    )
-    image.save(path)
-
-
-def raw_report(path: Path, screenshots: list[str]) -> None:
+def raw_report(path: Path, *, static: bool = False, crashed: bool = False, sample_count: int = 3) -> None:
+    signatures = [101, 202, 303] if not static else [101, 101, 101]
     path.write_text(
         json.dumps(
             {
                 "version": "1.3.1",
-                "status": "passed",
-                "crashed": False,
+                "status": "crashed" if crashed else "passed",
+                "crashed": crashed,
                 "game_title": "POKEMON EMER",
                 "game_code": "BPEE",
                 "rom_size": 16 * 1024 * 1024,
                 "platform": 1,
                 "frames_reached": 900,
                 "frame_samples": [
-                    {"frame": 120, "vram_nonzero_samples": 10, "pc": 0x08000100},
-                    {"frame": 600, "vram_nonzero_samples": 20, "pc": 0x08000100},
-                    {"frame": 900, "vram_nonzero_samples": 30, "pc": 0x08000100},
+                    {
+                        "frame": frame,
+                        "vram_nonzero_samples": 10 + index,
+                        "vram_signature": signatures[index],
+                        "palette_nonzero_samples": 8 + index,
+                        "palette_signature": signatures[index] + 1,
+                        "oam_nonzero_samples": index,
+                        "oam_signature": signatures[index] + 2,
+                        "pc": 0x08000100,
+                    }
+                    for index, frame in enumerate((120, 600, 900)[:sample_count])
                 ],
-                "screenshots": screenshots,
             }
         ),
         encoding="utf-8",
@@ -52,44 +45,36 @@ def raw_report(path: Path, screenshots: list[str]) -> None:
 
 
 class MgbaSmokeValidationTests(unittest.TestCase):
-    def test_accepts_rendered_and_changing_frames(self) -> None:
+    def test_accepts_initialized_and_changing_video_memory(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            names = ["frame-120.png", "frame-600.png", "frame-900.png"]
-            for index, name in enumerate(names):
-                make_frame(root / name, index * 20)
             report_path = root / "raw.json"
-            raw_report(report_path, names)
+            raw_report(report_path)
 
-            report = validate(report_path, root)
+            report = validate(report_path)
             self.assertTrue(report["valid"])
             self.assertTrue(all(report["checks"].values()))
 
-    def test_rejects_three_identical_frames(self) -> None:
+    def test_rejects_static_video_memory(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            names = ["frame-120.png", "frame-600.png", "frame-900.png"]
-            for name in names:
-                make_frame(root / name, 0)
             report_path = root / "raw.json"
-            raw_report(report_path, names)
+            raw_report(report_path, static=True)
 
-            report = validate(report_path, root)
+            report = validate(report_path)
             self.assertFalse(report["valid"])
-            self.assertFalse(report["checks"]["screenshots_changed"])
+            self.assertFalse(report["checks"]["video_memory_changed"])
 
-    def test_rejects_missing_screenshot(self) -> None:
+    def test_rejects_crash_or_missing_frame_sample(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            names = ["frame-120.png", "frame-600.png", "missing.png"]
-            make_frame(root / names[0], 0)
-            make_frame(root / names[1], 20)
             report_path = root / "raw.json"
-            raw_report(report_path, names)
+            raw_report(report_path, crashed=True, sample_count=2)
 
-            report = validate(report_path, root)
+            report = validate(report_path)
             self.assertFalse(report["valid"])
-            self.assertEqual(report["missing_screenshots"], ["missing.png"])
+            self.assertFalse(report["checks"]["emulator_reported_pass"])
+            self.assertFalse(report["checks"]["target_frames_reached"])
 
 
 if __name__ == "__main__":
