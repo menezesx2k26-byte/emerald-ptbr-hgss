@@ -25,6 +25,13 @@ class Fix:
     lines: tuple[str, ...]
 
 
+@dataclass(frozen=True)
+class CFix:
+    path: str
+    label: str
+    text: str
+
+
 FIXES = (
     Fix(
         "data/maps/BattleFrontier_BattleArenaLobby/scripts.inc",
@@ -192,6 +199,26 @@ FIXES = (
 )
 
 
+# Core UI strings confirmed in the production ROM during the interactive P1 pass.
+# Move names and descriptions are intentionally outside this list and remain English.
+C_FIXES = (
+    CFix("src/strings.c", "gText_MainMenuOption", "OPÇÕES"),
+    CFix("src/strings.c", "gText_MenuBag", "MOCHILA"),
+    CFix("src/strings.c", "gText_MenuSave", "SALVAR"),
+    CFix("src/strings.c", "gText_MenuOption", "OPÇÕES"),
+    CFix("src/strings.c", "gText_MenuExit", "SAIR"),
+    CFix("src/strings.c", "gText_MenuRetire", "DESISTIR"),
+    CFix("src/strings.c", "gText_MenuRest", "DESCANSAR"),
+    CFix("src/strings.c", "gText_YourName", "SEU NOME?"),
+    CFix("src/strings.c", "gText_MoveOkBack", r"{DPAD_NONE}MOVER  {A_BUTTON}OK  {B_BUTTON}VOLTAR"),
+    CFix("src/strings.c", "gText_IsThisTheCorrectTime", "Este é o horário correto?"),
+    CFix("src/strings.c", "gText_Confirm3", "CONFIRMAR"),
+    CFix("src/strings.c", "gText_Cancel4", "CANCELAR"),
+    CFix("src/strings.c", "gText_ContinueMenuTime", "TEMPO"),
+    CFix("src/strings.c", "gText_ContinueMenuBadges", "INSÍGNIAS"),
+)
+
+
 def raw_body(match: re.Match[str]) -> str:
     return "".join(LINE_RE.findall(match.group("body")))
 
@@ -225,11 +252,51 @@ def apply_fix(project: Path, fix: Fix) -> dict[str, object]:
     updated = text[: match.start("body")] + replacement_body(fix) + text[match.end("body") :]
     path.write_text(updated, encoding="utf-8")
     return {
+        "kind": "assembly",
         "file": fix.path,
         "label": fix.label,
         "placeholders": dict(placeholder_multiset(replacement)),
         "encoded_characters": len(replacement),
     }
+
+
+def c_string_pattern(label: str) -> re.Pattern[str]:
+    return re.compile(
+        rf'(?m)^(?P<prefix>(?:ALIGNED\(4\)\s+)?const u8 {re.escape(label)}\[\]\s*=\s*_\(")'
+        rf'(?P<body>(?:\\.|[^"\\])*)'
+        rf'(?P<suffix>"\);(?:\s*//.*)?)$'
+    )
+
+
+def apply_c_fix(project: Path, fix: CFix) -> dict[str, object]:
+    if '"' in fix.text or "\n" in fix.text.replace(r"\n", ""):
+        raise ValueError(f"Unsafe encoded C string in {fix.label}")
+
+    path = project / fix.path
+    text = path.read_text(encoding="utf-8")
+    pattern = c_string_pattern(fix.label)
+    matches = list(pattern.finditer(text))
+    if len(matches) != 1:
+        raise RuntimeError(f"Expected one {fix.label} C string in {fix.path}, found {len(matches)}")
+
+    match = matches[0]
+    current = match.group("body")
+    if placeholder_multiset(current) != placeholder_multiset(fix.text):
+        raise RuntimeError(f"Placeholder mismatch in {fix.label}")
+
+    updated = text[: match.start("body")] + fix.text + text[match.end("body") :]
+    path.write_text(updated, encoding="utf-8")
+    return {
+        "kind": "c_string",
+        "file": fix.path,
+        "label": fix.label,
+        "placeholders": dict(placeholder_multiset(fix.text)),
+        "encoded_characters": len(fix.text),
+    }
+
+
+def apply_all(project: Path) -> list[dict[str, object]]:
+    return [apply_fix(project, fix) for fix in FIXES] + [apply_c_fix(project, fix) for fix in C_FIXES]
 
 
 def main() -> None:
@@ -239,13 +306,15 @@ def main() -> None:
     args = parser.parse_args()
     project = args.project.resolve()
 
-    applied = [apply_fix(project, fix) for fix in FIXES]
+    applied = apply_all(project)
     report = {
         "version": release_version(),
         "fixes_applied": len(applied),
+        "assembly_fixes_applied": len(FIXES),
+        "core_ui_fixes_applied": len(C_FIXES),
         "fixes": applied,
         "move_names_policy": "English move names preserved",
-        "valid": len(applied) == len(FIXES),
+        "valid": len(applied) == len(FIXES) + len(C_FIXES),
     }
     report_path = args.report or project / f"manual_ptbr_fixes_{release_tag()}.json"
     report_path.write_text(json.dumps(report, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
