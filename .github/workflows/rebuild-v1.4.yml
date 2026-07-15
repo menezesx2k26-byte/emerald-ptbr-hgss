@@ -64,8 +64,10 @@ jobs:
             binutils-arm-none-eabi \
             cmake \
             ninja-build \
+            libsdl2-dev \
             libpng-dev \
             liblua5.4-dev \
+            xvfb \
             zlib1g-dev \
             python3-pil \
             git
@@ -175,7 +177,7 @@ jobs:
           ./build.sh
           ./install.sh ../game
 
-      - name: Build pinned mGBA headless
+      - name: Build pinned mGBA headless and SDL screenshot frontend
         run: |
           git clone --filter=blob:none --no-checkout https://github.com/mgba-emu/mgba.git mgba
           git -C mgba checkout --detach "$MGBA_SHA"
@@ -183,7 +185,8 @@ jobs:
           cmake -S mgba -B mgba-build -G Ninja \
             -DBUILD_HEADLESS=ON \
             -DBUILD_QT=OFF \
-            -DBUILD_SDL=OFF \
+            -DBUILD_SDL=ON \
+            -DSDL_VERSION=2 \
             -DBUILD_GL=OFF \
             -DBUILD_GLES2=OFF \
             -DBUILD_GLES3=OFF \
@@ -206,8 +209,9 @@ jobs:
             -DUSE_LZMA=OFF \
             -DUSE_MINIZIP=OFF \
             -DUSE_JSON_C=OFF
-          cmake --build mgba-build --target mgba-headless
+          cmake --build mgba-build --target mgba-headless mgba-sdl
           test -x mgba-build/mgba-headless
+          test -x mgba-build/mgba
 
       - name: Build ROM with full diagnostics
         id: buildrom
@@ -361,11 +365,12 @@ jobs:
         if: steps.map_qa_build.outcome == 'success'
         continue-on-error: true
         env:
+          SDL_AUDIODRIVER: dummy
           MGBA_MAP_QA_OUTPUT: ${{ github.workspace }}/map-qa
           MGBA_MAP_QA_SYMBOLS: ${{ github.workspace }}/map-qa-v1.4.0-dev.1.sym
         run: |
           mkdir -p "$MGBA_MAP_QA_OUTPUT"
-          mgba-build/mgba-headless \
+          xvfb-run -a mgba-build/mgba \
             --script "$GITHUB_WORKSPACE/scripts/mgba_map_qa.lua" \
             "$GITHUB_WORKSPACE/map-qa-game/pokeemerald_modern.gba" \
             >map-qa-mgba-v1.4.0-dev.1.log 2>&1 &
@@ -521,6 +526,7 @@ jobs:
             form-battle-v1.4.0-dev.1.sym
             game/pokeemerald_modern.gba
             mgba-build/mgba-headless
+            mgba-build/mgba
             mgba-form-battle/
             map_qa_instrumentation_v1.4.0-dev.1.json
             map_qa_validation_v1.4.0-dev.1.json

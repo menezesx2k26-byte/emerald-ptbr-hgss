@@ -10,6 +10,7 @@ from PIL import Image
 
 
 SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
+WORKFLOW = Path(__file__).resolve().parents[1] / ".github/workflows/rebuild-v1.4.yml"
 sys.path.insert(0, str(SCRIPTS))
 
 from instrument_map_qa import (  # noqa: E402
@@ -117,6 +118,16 @@ class MapQaInstrumentationTests(unittest.TestCase):
 
 
 class MapQaValidationTests(unittest.TestCase):
+    def test_workflow_uses_framebuffer_frontend_for_screenshots(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn("-DBUILD_SDL=ON", workflow)
+        self.assertIn("xvfb-run -a mgba-build/mgba", workflow)
+        self.assertNotIn(
+            'mgba-build/mgba-headless \\\n'
+            '            --script "$GITHUB_WORKSPACE/scripts/mgba_map_qa.lua"',
+            workflow,
+        )
+
     def test_accepts_four_distinct_runtime_screenshots(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
