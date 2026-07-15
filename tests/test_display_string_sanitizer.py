@@ -3,6 +3,7 @@ from __future__ import annotations
 import sys
 import tempfile
 import unittest
+from collections import defaultdict
 from pathlib import Path
 
 
@@ -50,37 +51,45 @@ class DisplayStringSanitizerTests(unittest.TestCase):
             self.assertIn('const u8 gText_No[] = _("NÃO");', updated)
             self.assertIn('const u8 gText_No4[] = _("NÃO");', updated)
 
-    def test_normalizes_corrupted_littleroot_intro_block(self) -> None:
-        relative, label, replacement = P1_ASSEMBLY_REPLACEMENTS[0]
+    def test_normalizes_all_reviewed_littleroot_blocks(self) -> None:
+        by_file: dict[str, list[tuple[str, tuple[str, ...]]]] = defaultdict(list)
+        for relative, label, replacement in P1_ASSEMBLY_REPLACEMENTS:
+            by_file[relative].append((label, replacement))
+
         with tempfile.TemporaryDirectory() as directory:
             project = Path(directory)
-            path = project / relative
-            path.parent.mkdir(parents=True)
-            path.write_text(
-                f'{label}:\n'
-                '\t.string "Não. AAAAAAA- Como você\\n"\n'
-                '\t.string "gosta do seu quarto novo?\\p"\n'
-                '\t.string "Tudo está arrumado.{JOGADOR}$"\n',
-                encoding="utf-8",
-            )
+            for relative, blocks in by_file.items():
+                path = project / relative
+                path.parent.mkdir(parents=True, exist_ok=True)
+                source_blocks = []
+                for label, replacement in blocks:
+                    raw = "".join(replacement)
+                    rough = (
+                        raw.replace("MÃE", "MäE")
+                        .replace("REPÓRTER", "INTERVIEWER")
+                        .replace("Transmitimos", "Trouxemos")
+                    )
+                    source_blocks.append(f'{label}:\n\t.string "{rough}"\n')
+                path.write_text("\n".join(source_blocks), encoding="utf-8")
 
-            # Keep the same placeholder multiset as the production block.
-            replacement_with_player = tuple(
-                line if index else line.replace("{JOGADOR}", "{JOGADOR}")
-                for index, line in enumerate(replacement)
-            )
-            self.assertEqual(replacement_with_player, replacement)
             report = normalize_p1_assembly_strings(project)
-            updated = path.read_text(encoding="utf-8")
 
-            self.assertEqual(report[0]["label"], label)
-            self.assertIn("MÃE: {JOGADOR}, gostou do seu", updated)
-            self.assertNotIn("AAAAAAA", updated)
-            self.assertTrue(updated.rstrip().endswith('$"'))
+            self.assertEqual(len(report), len(P1_ASSEMBLY_REPLACEMENTS))
+            for relative, label, replacement in P1_ASSEMBLY_REPLACEMENTS:
+                updated = (project / relative).read_text(encoding="utf-8")
+                self.assertIn(f"{label}:", updated)
+                for line in replacement:
+                    self.assertIn(f'\t.string "{line}"', updated)
+            bedroom = (project / P1_ASSEMBLY_REPLACEMENTS[0][0]).read_text(encoding="utf-8")
+            television = (project / P1_ASSEMBLY_REPLACEMENTS[1][0]).read_text(encoding="utf-8")
+            self.assertIn("MÃE: {JOGADOR}, gostou do seu", bedroom)
+            self.assertIn("REPÓRTER: ...Transmitimos esta", television)
+            self.assertNotIn("INTERVIEWER", television)
 
     def test_move_tables_are_outside_display_normalization(self) -> None:
         self.assertTrue(all("Move" not in label for label in CORE_UI_REPLACEMENTS))
         self.assertTrue(all("move_names" not in path for path, _, _ in P1_ASSEMBLY_REPLACEMENTS))
+        self.assertTrue(all("move_descriptions" not in path for path, _, _ in P1_ASSEMBLY_REPLACEMENTS))
 
 
 if __name__ == "__main__":
