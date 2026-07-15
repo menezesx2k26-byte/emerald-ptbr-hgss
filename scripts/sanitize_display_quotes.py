@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+from collections import Counter
 from pathlib import Path
 
 from release import release_tag, release_version
@@ -10,8 +11,13 @@ from release import release_tag, release_version
 STRING_RE = re.compile(r'(?P<prefix>\.string\s+")(?P<body>(?:\\.|[^"\\])*)(?P<suffix>")')
 C_RE = re.compile(r'(?P<prefix>_\(")(?P<body>(?:\\.|[^"\\])*)(?P<suffix>"\))')
 PLACEHOLDER_RE = re.compile(r"\{[^{}]+\}")
+ASSEMBLY_BLOCK_RE = re.compile(
+    r'(?ms)^(?P<label>[A-Za-z_][A-Za-z0-9_]*::?\n)'
+    r'(?P<body>(?:[ \t]*\.string[ \t]+"(?:\\.|[^"\\])*"[ \t]*\n)+)'
+)
+ASSEMBLY_LINE_RE = re.compile(r'\.string\s+"((?:\\.|[^"\\])*)"')
 
-# Exact display strings exposed by the interactive P1 pass.  They are
+# Exact display strings exposed by the interactive P1 pass. They are
 # normalized here after the reviewed dialogue pass so legacy mojibake and the
 # shared YES/NO menu cannot leak into otherwise translated interfaces.
 CORE_UI_REPLACEMENTS = {
@@ -20,6 +26,22 @@ CORE_UI_REPLACEMENTS = {
     "gText_No": "NÃO",
     "gText_No4": "NÃO",
 }
+
+# The first playable route is exercised frame by frame. Any malformed line
+# found there is pinned by label rather than repaired with broad substitutions.
+P1_ASSEMBLY_REPLACEMENTS = (
+    (
+        "data/maps/LittlerootTown_BrendansHouse_2F/scripts.inc",
+        "PlayersHouse_2F_Text_HowDoYouLikeYourRoom",
+        (
+            r"MÃE: {JOGADOR}, gostou do seu\nquarto novo?\p",
+            r"Ótimo! Está tudo bem\narrumado!\p",
+            r"Também terminaram de trazer\ntudo para o andar de baixo.\p",
+            r"Os POKéMON carregadores são\nmuito práticos!\p",
+            r"Ah, confira se está tudo\ncerto na sua mesa.$",
+        ),
+    ),
+)
 
 
 def replace_quotes(raw: str) -> tuple[str, int]:
@@ -69,13 +91,43 @@ def normalize_core_ui_strings(path: Path) -> list[dict[str, str]]:
             raise RuntimeError(f"Expected one {label} in {path}, found {len(matches)}")
         match = matches[0]
         current = match.group('body')
-        if sorted(PLACEHOLDER_RE.findall(current)) != sorted(PLACEHOLDER_RE.findall(replacement)):
+        if Counter(PLACEHOLDER_RE.findall(current)) != Counter(PLACEHOLDER_RE.findall(replacement)):
             raise RuntimeError(f"Placeholder mismatch in {label}")
         updated = updated[:match.start('body')] + replacement + updated[match.end('body'):]
         applied.append({"label": label, "before": current, "after": replacement})
 
     if updated != original:
         path.write_text(updated, encoding='utf-8')
+    return applied
+
+
+def normalize_p1_assembly_strings(project: Path) -> list[dict[str, object]]:
+    applied: list[dict[str, object]] = []
+    for relative, label, lines in P1_ASSEMBLY_REPLACEMENTS:
+        path = project / relative
+        original = path.read_text(encoding='utf-8')
+        matches = [
+            match for match in ASSEMBLY_BLOCK_RE.finditer(original)
+            if match.group('label').rstrip(':\n') == label
+        ]
+        if len(matches) != 1:
+            raise RuntimeError(f"Expected one {label} block in {relative}, found {len(matches)}")
+        match = matches[0]
+        current = ''.join(ASSEMBLY_LINE_RE.findall(match.group('body')))
+        replacement = ''.join(lines)
+        if Counter(PLACEHOLDER_RE.findall(current)) != Counter(PLACEHOLDER_RE.findall(replacement)):
+            raise RuntimeError(f"Placeholder mismatch in {label}")
+        if current.endswith('$') != replacement.endswith('$'):
+            raise RuntimeError(f"Terminator mismatch in {label}")
+        body = ''.join(f'\t.string "{line}"\n' for line in lines)
+        updated = original[:match.start('body')] + body + original[match.end('body'):]
+        path.write_text(updated, encoding='utf-8')
+        applied.append({
+            'file': relative,
+            'label': label,
+            'before_characters': len(current),
+            'after_characters': len(replacement),
+        })
     return applied
 
 
@@ -115,6 +167,11 @@ def main() -> None:
     if core_ui and 'src/strings.c' not in files_changed:
         files_changed.append('src/strings.c')
 
+    p1_assembly = normalize_p1_assembly_strings(project)
+    for item in p1_assembly:
+        if item['file'] not in files_changed:
+            files_changed.append(str(item['file']))
+
     remaining = []
     for path in assembly_files + c_files:
         if '\\"' in path.read_text(encoding='utf-8'):
@@ -124,6 +181,7 @@ def main() -> None:
         'version': release_version(),
         'quotes_converted': quote_count,
         'core_ui_strings_normalized': core_ui,
+        'p1_assembly_strings_normalized': p1_assembly,
         'files_changed': files_changed,
         'remaining_escaped_quotes': remaining,
         'move_names_policy': 'English move names and descriptions preserved',
