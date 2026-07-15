@@ -5,11 +5,13 @@ direção visual inspirada em HeartGold/SoulSilver.
 
 ## v1.4 em desenvolvimento
 
-A v1.4 começou pela remoção dos 386 segundos quadros estáticos de batalha.
-Cada animação agora preserva a pose e a paleta HGSS no primeiro quadro e gera
-um movimento ocioso sutil, de um pixel, no segundo. A auditoria bloqueia o
-build se algum quadro continuar duplicado ou se o primeiro deixar de coincidir
-com o sprite frontal importado.
+A v1.4 começou pela remoção dos segundos quadros estáticos de batalha. As
+animações convencionais e as formas de Unown preservam a pose e a paleta HGSS
+no primeiro quadro e geram um movimento ocioso sutil, de um pixel, no segundo.
+Castform é a exceção estrutural: cada forma mantém um único quadro 64×64,
+porque os quatro índices de animação do motor selecionam Normal, Sunny, Rainy e
+Snowy. A auditoria valida as duas políticas e bloqueia divergências entre
+`front.png` e o primeiro quadro importado.
 
 A segunda entrega importa as 27 formas alternativas de Unown e Castform Sunny,
 Rainy e Snowy da mesma coleção HGSS fixada por commit. Unown usa a paleta

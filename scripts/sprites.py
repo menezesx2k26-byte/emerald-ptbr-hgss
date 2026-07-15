@@ -207,6 +207,7 @@ def write_sprite_set(
     normal_palette: Sequence[tuple[int, int, int]] | None = None,
     shiny_palette: Sequence[tuple[int, int, int]] | None = None,
     *,
+    animate_front: bool = True,
     write_palettes: bool = True,
 ) -> None:
     normal_front, normal_back, shiny_front, shiny_back = sprites
@@ -223,12 +224,18 @@ def write_sprite_set(
     out.mkdir(parents=True, exist_ok=True)
     indexed_front.save(out / "front.png", optimize=False)
     indexed_back.save(out / "back.png", optimize=False)
-    idle_frame = build_idle_frame(indexed_front)
-    animation = Image.new("P", (64, 128), 0)
-    animation.putpalette(indexed_front.getpalette())
-    animation.paste(indexed_front, (0, 0))
-    animation.paste(idle_frame, (0, 64))
-    animation.info["transparency"] = 0
+    if animate_front:
+        idle_frame = build_idle_frame(indexed_front)
+        animation = Image.new("P", (64, 128), 0)
+        animation.putpalette(indexed_front.getpalette())
+        animation.paste(indexed_front, (0, 0))
+        animation.paste(idle_frame, (0, 64))
+        animation.info["transparency"] = 0
+    else:
+        # Castform concatenates four 64x64 form frames into one engine sheet.
+        # A second idle frame here would shift Rainy/Snowy out of the four
+        # indices selected by CastformDataTypeChange.
+        animation = indexed_front.copy()
     animation.save(out / "anim_front.png", optimize=False)
     if write_palettes:
         write_jasc(out / "normal.pal", normal_palette)
@@ -295,7 +302,7 @@ def import_castform_forms(project: Path, sprites_root: Path) -> list[dict[str, o
     records: list[dict[str, object]] = []
     for form, source_id in CASTFORM_FORM_SOURCES.items():
         out = root / form
-        write_sprite_set(out, load_sprite_set(sprites_root, source_id))
+        write_sprite_set(out, load_sprite_set(sprites_root, source_id), animate_front=False)
         records.append(form_record(project, sprites_root, "castform", form, source_id, out))
     return records
 
@@ -317,7 +324,11 @@ def import_hgss_sprites(project: Path, sprites_root: Path) -> dict[str, object]:
 
     for dex_id, symbol in enumerate(symbols, 1):
         if symbol != "UNOWN":
-            write_sprite_set(destination(project, symbol), load_sprite_set(sprites_root, str(dex_id)))
+            write_sprite_set(
+                destination(project, symbol),
+                load_sprite_set(sprites_root, str(dex_id)),
+                animate_front=symbol != "CASTFORM",
+            )
         if dex_id % 25 == 0 or dex_id == 386:
             print(f"HGSS sprites: {dex_id}/386")
 

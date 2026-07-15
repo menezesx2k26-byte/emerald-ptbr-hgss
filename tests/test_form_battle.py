@@ -160,7 +160,7 @@ class FormBattleInstrumentationTests(unittest.TestCase):
             self.assertIn("SetMainCallback2(CB2_FormBattleTestInit)", main_text)
             self.assertIn("CastformDataTypeChange(player)", battle_text)
             self.assertIn("GET_UNOWN_LETTER", battle_text)
-            self.assertIn("CpuCopy32", battle_text)
+            self.assertIn("BattleLoadPlayerMonSpriteGfx(&gPlayerParty[0]", battle_text)
             self.assertEqual(len(report["cases"]), 9)
 
     def test_refuses_to_instrument_twice(self) -> None:

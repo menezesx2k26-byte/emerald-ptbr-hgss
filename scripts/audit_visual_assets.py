@@ -68,6 +68,16 @@ def inspect_animation(front: Path, animation: Path) -> tuple[bool, bool, int]:
     return first_matches, second_differs, changed_pixels
 
 
+def inspect_single_frame(front: Path, animation: Path) -> bool:
+    if not front.exists() or not animation.exists():
+        return False
+    try:
+        with Image.open(front) as front_image, Image.open(animation) as animation_image:
+            return front_image.tobytes() == animation_image.tobytes()
+    except OSError:
+        return False
+
+
 def audit_pokemon(project: Path) -> dict[str, object]:
     problems: list[str] = []
     invalid_symbols: list[str] = []
@@ -83,7 +93,8 @@ def audit_pokemon(project: Path) -> dict[str, object]:
         animation = root / "anim_front.png"
         problems.extend(inspect_indexed_image(front, (64, 64)))
         problems.extend(inspect_indexed_image(back, (64, 64)))
-        problems.extend(inspect_indexed_image(animation, (64, 128)))
+        expected_animation_size = (64, 64) if symbol == "CASTFORM" else (64, 128)
+        problems.extend(inspect_indexed_image(animation, expected_animation_size))
         palette_root = project / "graphics/pokemon/unown" if symbol == "UNOWN" else root
         for palette_name in ("normal.pal", "shiny.pal"):
             palette = palette_root / palette_name
@@ -91,7 +102,10 @@ def audit_pokemon(project: Path) -> dict[str, object]:
                 read_jasc(palette)
             except (FileNotFoundError, ValueError) as error:
                 problems.append(f"invalid palette {palette}: {error}")
-        if animation.exists() and front.exists():
+        if symbol == "CASTFORM" and animation.exists() and front.exists():
+            if not inspect_single_frame(front, animation):
+                first_frame_mismatch.append(symbol)
+        elif animation.exists() and front.exists():
             first_matches, second_differs, changed = inspect_animation(front, animation)
             if not first_matches:
                 first_frame_mismatch.append(symbol)
@@ -116,7 +130,8 @@ def audit_pokemon(project: Path) -> dict[str, object]:
         "changed_pixels_max": max(changed_pixels, default=0),
         "animation_policy": (
             "Frame one preserves the imported HGSS pose. Frame two applies a one-pixel idle lift "
-            "derived from the same indexed artwork; Black/White assets are not mixed in."
+            "derived from the same indexed artwork; Black/White assets are not mixed in. Castform "
+            "keeps one frame per weather form because its four animation indices select forms."
         ),
     }
 
@@ -207,7 +222,8 @@ def audit_alternative_forms(project: Path) -> dict[str, object]:
         animation = root / "anim_front.png"
         problems.extend(inspect_indexed_image(front, (64, 64)))
         problems.extend(inspect_indexed_image(back, (64, 64)))
-        problems.extend(inspect_indexed_image(animation, (64, 128)))
+        expected_animation_size = (64, 64) if form["family"] == "castform" else (64, 128)
+        problems.extend(inspect_indexed_image(animation, expected_animation_size))
         palette_root = project / "graphics/pokemon/unown" if form["family"] == "unown" else root
         for palette_name in ("normal.pal", "shiny.pal"):
             palette = palette_root / palette_name
@@ -233,7 +249,10 @@ def audit_alternative_forms(project: Path) -> dict[str, object]:
         ):
             problems.append(f"{key}: incomplete source SHA-256 provenance")
 
-        if front.exists() and animation.exists():
+        if form["family"] == "castform" and front.exists() and animation.exists():
+            if not inspect_single_frame(front, animation):
+                first_frame_mismatches.append(key)
+        elif front.exists() and animation.exists():
             first_matches, second_differs, changed = inspect_animation(front, animation)
             if not first_matches:
                 first_frame_mismatches.append(key)
@@ -256,6 +275,7 @@ def audit_alternative_forms(project: Path) -> dict[str, object]:
         "changed_pixels_max": max(changed_pixels, default=0),
         "unown_palette_policy": "One shared normal/shiny palette for all 28 forms.",
         "castform_palette_policy": "One normal/shiny palette pair per weather form.",
+        "castform_animation_policy": "One 64x64 frame per form; the four engine animation indices are form selectors.",
     }
 
 

@@ -158,26 +158,6 @@ static void FormBattleTestPublishSpriteMetadata(u8 player, u8 opponent)
 {
     struct Sprite *backSprite = &gSprites[gBattlerSpriteIds[player]];
     struct Sprite *frontSprite = &gSprites[gBattlerSpriteIds[opponent]];
-    u8 frame = gFormBattleTestMode == FORM_BATTLE_TEST_MODE_CASTFORM
-             ? gFormBattleTestExpectedValue
-             : 0;
-    u8 backPosition = GetBattlerPosition(player);
-    u8 frontPosition = GetBattlerPosition(opponent);
-
-    // Battle callbacks can enqueue another frame copy between a form change and
-    // the emulator sample. Commit the engine-selected frame to each sprite's
-    // actual OBJ tile range at the publication boundary so both sides are
-    // sampled from the same deterministic battle frame.
-    CpuCopy32(
-        gMonSpritesGfxPtr->sprites.ptr[backPosition] + frame * MON_PIC_SIZE,
-        (void *)(OBJ_VRAM0 + backSprite->oam.tileNum * 32),
-        MON_PIC_SIZE
-    );
-    CpuCopy32(
-        gMonSpritesGfxPtr->sprites.ptr[frontPosition] + frame * MON_PIC_SIZE,
-        (void *)(OBJ_VRAM0 + frontSprite->oam.tileNum * 32),
-        MON_PIC_SIZE
-    );
 
     gFormBattleTestBackTileNum = backSprite->oam.tileNum;
     gFormBattleTestFrontTileNum = frontSprite->oam.tileNum;
@@ -213,6 +193,11 @@ static void FormBattleTestApplyCastformCase(u8 caseId, u8 player, u8 opponent)
     gFormBattleTestFrontSpecies = SPECIES_CASTFORM;
     gFormBattleTestBackPersonality = GetMonData(&gPlayerParty[0], MON_DATA_PERSONALITY);
     gFormBattleTestFrontPersonality = GetMonData(&gEnemyParty[0], MON_DATA_PERSONALITY);
+
+    // Reload the four-frame Castform sheets for every case so the test observes
+    // the same loader -> form selector -> OBJ copy path used on switch-in.
+    BattleLoadPlayerMonSpriteGfx(&gPlayerParty[0], player);
+    BattleLoadOpponentMonSpriteGfx(&gEnemyParty[0], opponent);
 
     gFormBattleTestPlayerResult = CastformDataTypeChange(player);
     if (gFormBattleTestPlayerResult != expectedForm + 1)
