@@ -27,8 +27,9 @@ CORE_UI_REPLACEMENTS = {
     "gText_No4": "NÃO",
 }
 
-# The first playable route is exercised frame by frame. Any malformed line
-# found there is pinned by label rather than repaired with broad substitutions.
+# The first playable route is exercised frame by frame. Any malformed or
+# visibly rough line found there is pinned by label rather than repaired with
+# broad substitutions. Move names and descriptions are deliberately excluded.
 P1_ASSEMBLY_REPLACEMENTS = (
     (
         "data/maps/LittlerootTown_BrendansHouse_2F/scripts.inc",
@@ -39,6 +40,40 @@ P1_ASSEMBLY_REPLACEMENTS = (
             r"Também terminaram de trazer\ntudo para o andar de baixo.\p",
             r"Os POKéMON carregadores são\nmuito práticos!\p",
             r"Ah, confira se está tudo\ncerto na sua mesa.$",
+        ),
+    ),
+    (
+        "data/maps/LittlerootTown_BrendansHouse_1F/scripts.inc",
+        "PlayersHouse_1F_Text_MaybeDadWillBeOn",
+        (
+            r"MÃE: Olhe! É o GINÁSIO DE\nPETALBURG!\p",
+            r"Talvez seu PAI apareça!$",
+        ),
+    ),
+    (
+        "data/maps/LittlerootTown_BrendansHouse_1F/scripts.inc",
+        "PlayersHouse_1F_Text_ReportFromPetalburgGym",
+        (
+            r"REPÓRTER: ...Transmitimos esta\nreportagem em frente ao\lGINÁSIO DE PETALBURG.$",
+        ),
+    ),
+    (
+        "data/maps/LittlerootTown_BrendansHouse_1F/scripts.inc",
+        "PlayersHouse_1F_Text_ItsOverWeMissedHim",
+        (
+            r"MÃE: Ah... Acabou.\p",
+            r"Achei que seu PAI apareceria,\nmas perdemos a parte dele.\p",
+            r"Que pena.$",
+        ),
+    ),
+    (
+        "data/maps/LittlerootTown_BrendansHouse_1F/scripts.inc",
+        "PlayersHouse_1F_Text_GoIntroduceYourselfNextDoor",
+        (
+            r"Ah, sim!\p",
+            r"Um amigo do seu PAI mora\nnesta cidade.\p",
+            r"Ele se chama PROF. BIRCH.\p",
+            r"A casa dele fica ao lado.\nVá se apresentar.$",
         ),
     ),
 )
