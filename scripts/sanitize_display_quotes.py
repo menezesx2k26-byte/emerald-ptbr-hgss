@@ -85,9 +85,9 @@ P1_ASSEMBLY_REPLACEMENTS = (
             r"Olá! E você é...?\p",
             r"... ... ... ... ... ... ... ...\p",
             r"Ah, você é {JOGADOR}{KUN}, nosso novo\nvizinho! Olá!\p",
-            r"Aqui mora {STR_VAR_1}, alguém quase\nda sua idade.\p",
-            r"{STR_VAR_1} ficou muito feliz com a\nideia de fazer uma nova amizade.\p",
-            r"{STR_VAR_1} está lá em cima, eu acho.$",
+            r"{STR_VAR_1} mora aqui e tem\nquase a sua idade.\p",
+            r"{STR_VAR_1} ficou feliz com a\nideia de fazer uma amizade.\p",
+            r"{STR_VAR_1} está lá em cima.$",
         ),
     ),
 )
