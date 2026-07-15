@@ -17,9 +17,16 @@ compartilhada esperada pelo motor; cada forma climática de Castform preserva
 seu próprio par normal/shiny. O relatório registra a procedência e os hashes e
 audita os 30 conjuntos antes da compilação.
 
-As próximas entregas são validar a troca dessas formas em batalha e substituir
-os quatro tilesets-piloto por arte própria, em vez de apenas paletas derivadas
-de Emerald. O escopo e os critérios estão em [`V1.4_ROADMAP.md`](V1.4_ROADMAP.md).
+A troca de formas também ganhou um teste instrumentado no mGBA. Dentro de uma
+batalha real, o motor percorre Castform Sunny, Rainy, Snowy e normal pela lógica
+nativa de clima, depois renderiza Unown A, B, Z, `!` e `?` a partir de
+personalidades verificadas. Tiles e paletas de frente e costas são validados
+separadamente. O harness só existe numa ROM diagnóstica efêmera; o SHA-256 da
+ROM jogável é conferido novamente depois do teste.
+
+A próxima entrega é substituir os quatro tilesets-piloto por arte própria, em
+vez de apenas paletas derivadas de Emerald. O escopo e os critérios estão em
+[`V1.4_ROADMAP.md`](V1.4_ROADMAP.md).
 
 ## Estado da v1.3.1
 
