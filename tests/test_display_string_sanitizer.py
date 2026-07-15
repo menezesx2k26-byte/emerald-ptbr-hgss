@@ -89,8 +89,8 @@ class DisplayStringSanitizerTests(unittest.TestCase):
             bedroom_path, _ = by_label["PlayersHouse_2F_Text_HowDoYouLikeYourRoom"]
             television_path, _ = by_label["PlayersHouse_1F_Text_ReportFromPetalburgGym"]
             neighbor_path, _ = by_label["RivalsHouse_1F_Text_OhYoureTheNewNeighbor"]
-            may_path, _ = by_label["RivalsHouse_1F_Text_MayWhoAreYou"]
-            brendan_path, _ = by_label["RivalsHouse_1F_Text_BrendanWhoAreYou"]
+            may_path, may_replacement = by_label["RivalsHouse_1F_Text_MayWhoAreYou"]
+            brendan_path, brendan_replacement = by_label["RivalsHouse_1F_Text_BrendanWhoAreYou"]
 
             bedroom = (project / bedroom_path).read_text(encoding="utf-8")
             television = (project / television_path).read_text(encoding="utf-8")
@@ -102,11 +102,11 @@ class DisplayStringSanitizerTests(unittest.TestCase):
             self.assertIn("REPÓRTER: ...Transmitimos esta", television)
             self.assertNotIn("INTERVIEWER", television)
             self.assertIn("{STR_VAR_1} mora aqui e tem", neighbor)
-            self.assertEqual(neighbor.count("{STR_VAR_1}"), 3)
+            self.assertEqual("".join(by_label["RivalsHouse_1F_Text_OhYoureTheNewNeighbor"][1]).count("{STR_VAR_1}"), 3)
             self.assertIn("Hum... Eu sou MAY.", may)
-            self.assertEqual(may.count("{JOGADOR}"), 5)
+            self.assertEqual("".join(may_replacement).count("{JOGADOR}"), 5)
             self.assertIn("Meu nome é BRENDAN.", brendan)
-            self.assertEqual(brendan.count("{JOGADOR}"), 2)
+            self.assertEqual("".join(brendan_replacement).count("{JOGADOR}"), 2)
 
     def test_move_tables_are_outside_display_normalization(self) -> None:
         self.assertTrue(all("Move" not in label for label in CORE_UI_REPLACEMENTS))
