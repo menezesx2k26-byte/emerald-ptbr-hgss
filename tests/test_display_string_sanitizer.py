@@ -25,12 +25,14 @@ class DisplayStringSanitizerTests(unittest.TestCase):
         self.assertEqual(updated, 'Ele disse: “sim”.')
         self.assertEqual(count, 2)
 
-    def test_normalizes_shared_yes_no_strings(self) -> None:
+    def test_normalizes_shared_ui_and_relationship_strings(self) -> None:
         originals = {
             "gText_YesNo": r"YES\nNO",
             "gText_Yes": "SIM",
             "gText_No": "NäO",
             "gText_No4": "NäO",
+            "gText_Daughter": "daughter",
+            "gText_Son": "son",
         }
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "strings.c"
@@ -49,7 +51,8 @@ class DisplayStringSanitizerTests(unittest.TestCase):
             self.assertEqual(len(report), len(CORE_UI_REPLACEMENTS))
             self.assertIn(r'const u8 gText_YesNo[] = _("SIM\nNÃO");', updated)
             self.assertIn('const u8 gText_No[] = _("NÃO");', updated)
-            self.assertIn('const u8 gText_No4[] = _("NÃO");', updated)
+            self.assertIn('const u8 gText_Daughter[] = _("nossa filha");', updated)
+            self.assertIn('const u8 gText_Son[] = _("nosso filho");', updated)
 
     def test_normalizes_all_reviewed_littleroot_blocks(self) -> None:
         by_file: dict[str, list[tuple[str, tuple[str, ...]]]] = defaultdict(list)
@@ -68,6 +71,7 @@ class DisplayStringSanitizerTests(unittest.TestCase):
                         raw.replace("MÃE", "MäE")
                         .replace("REPÓRTER", "INTERVIEWER")
                         .replace("Transmitimos", "Trouxemos")
+                        .replace("nossa filha", "daughter")
                     )
                     source_blocks.append(f'{label}:\n\t.string "{rough}"\n')
                 path.write_text("\n".join(source_blocks), encoding="utf-8")
@@ -82,9 +86,12 @@ class DisplayStringSanitizerTests(unittest.TestCase):
                     self.assertIn(f'\t.string "{line}"', updated)
             bedroom = (project / P1_ASSEMBLY_REPLACEMENTS[0][0]).read_text(encoding="utf-8")
             television = (project / P1_ASSEMBLY_REPLACEMENTS[1][0]).read_text(encoding="utf-8")
+            rival_house = (project / P1_ASSEMBLY_REPLACEMENTS[-1][0]).read_text(encoding="utf-8")
             self.assertIn("MÃE: {JOGADOR}, gostou do seu", bedroom)
             self.assertIn("REPÓRTER: ...Transmitimos esta", television)
             self.assertNotIn("INTERVIEWER", television)
+            self.assertIn("{STR_VAR_1} mora aqui e tem", rival_house)
+            self.assertEqual(rival_house.count("{STR_VAR_1}"), 3)
 
     def test_move_tables_are_outside_display_normalization(self) -> None:
         self.assertTrue(all("Move" not in label for label in CORE_UI_REPLACEMENTS))
