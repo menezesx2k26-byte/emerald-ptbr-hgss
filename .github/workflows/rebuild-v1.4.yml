@@ -211,7 +211,7 @@ jobs:
             -DUSE_JSON_C=OFF
           cmake --build mgba-build --target mgba-headless mgba-sdl
           test -x mgba-build/mgba-headless
-          test -x mgba-build/mgba
+          test -x mgba-build/sdl/mgba
 
       - name: Build ROM with full diagnostics
         id: buildrom
@@ -370,7 +370,7 @@ jobs:
           MGBA_MAP_QA_SYMBOLS: ${{ github.workspace }}/map-qa-v1.4.0-dev.1.sym
         run: |
           mkdir -p "$MGBA_MAP_QA_OUTPUT"
-          xvfb-run -a mgba-build/mgba \
+          xvfb-run -a mgba-build/sdl/mgba \
             --script "$GITHUB_WORKSPACE/scripts/mgba_map_qa.lua" \
             "$GITHUB_WORKSPACE/map-qa-game/pokeemerald_modern.gba" \
             >map-qa-mgba-v1.4.0-dev.1.log 2>&1 &
@@ -526,7 +526,7 @@ jobs:
             form-battle-v1.4.0-dev.1.sym
             game/pokeemerald_modern.gba
             mgba-build/mgba-headless
-            mgba-build/mgba
+            mgba-build/sdl/mgba
             mgba-form-battle/
             map_qa_instrumentation_v1.4.0-dev.1.json
             map_qa_validation_v1.4.0-dev.1.json

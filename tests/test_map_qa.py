@@ -121,7 +121,7 @@ class MapQaValidationTests(unittest.TestCase):
     def test_workflow_uses_framebuffer_frontend_for_screenshots(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
         self.assertIn("-DBUILD_SDL=ON", workflow)
-        self.assertIn("xvfb-run -a mgba-build/mgba", workflow)
+        self.assertIn("xvfb-run -a mgba-build/sdl/mgba", workflow)
         self.assertNotIn(
             'mgba-build/mgba-headless \\\n'
             '            --script "$GITHUB_WORKSPACE/scripts/mgba_map_qa.lua"',
