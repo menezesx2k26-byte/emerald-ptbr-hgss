@@ -18,13 +18,15 @@ ASSEMBLY_BLOCK_RE = re.compile(
 ASSEMBLY_LINE_RE = re.compile(r'\.string\s+"((?:\\.|[^"\\])*)"')
 
 # Exact display strings exposed by the interactive P1 pass. They are
-# normalized here after the reviewed dialogue pass so legacy mojibake and the
-# shared YES/NO menu cannot leak into otherwise translated interfaces.
+# normalized here after the reviewed dialogue pass so legacy mojibake, shared
+# menus and dynamic relationship terms cannot leak English into PT-BR text.
 CORE_UI_REPLACEMENTS = {
     "gText_YesNo": r"SIM\nNÃO",
     "gText_Yes": "SIM",
     "gText_No": "NÃO",
     "gText_No4": "NÃO",
+    "gText_Daughter": "nossa filha",
+    "gText_Son": "nosso filho",
 }
 
 # The first playable route is exercised frame by frame. Any malformed or
@@ -74,6 +76,18 @@ P1_ASSEMBLY_REPLACEMENTS = (
             r"Um amigo do seu PAI mora\nnesta cidade.\p",
             r"Ele se chama PROF. BIRCH.\p",
             r"A casa dele fica ao lado.\nVá se apresentar.$",
+        ),
+    ),
+    (
+        "data/maps/LittlerootTown_MaysHouse_1F/scripts.inc",
+        "RivalsHouse_1F_Text_OhYoureTheNewNeighbor",
+        (
+            r"Olá! E você é...?\p",
+            r"... ... ... ... ... ... ... ...\p",
+            r"Ah, você é {JOGADOR}{KUN}, nosso novo\nvizinho! Olá!\p",
+            r"Aqui mora {STR_VAR_1}, alguém quase\nda sua idade.\p",
+            r"{STR_VAR_1} ficou muito feliz com a\nideia de fazer uma nova amizade.\p",
+            r"{STR_VAR_1} está lá em cima, eu acho.$",
         ),
     ),
 )
