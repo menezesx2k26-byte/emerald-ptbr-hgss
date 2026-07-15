@@ -165,7 +165,8 @@ class FormBattleInstrumentationTests(unittest.TestCase):
             self.assertIn("gMonSpritesGfxPtr->frameImages[playerPosition]", battle_text)
             self.assertIn("gFormBattleTestReadyMask |= 32", battle_text)
             self.assertIn("gMain.newKeys |= A_BUTTON", battle_text)
-            self.assertIn("FormBattleTestAdvanceIntro();\n    RunTasks();", battle_text)
+            self.assertIn("SetMultiuseSpriteTemplateToPokemon(SPECIES_CASTFORM", battle_text)
+            self.assertIn("if (!gFormBattleTestOwnsBattle)\n        RunTasks();", battle_text)
             self.assertEqual(len(report["cases"]), 9)
 
     def test_refuses_to_instrument_twice(self) -> None:

@@ -101,6 +101,7 @@ EWRAM_DATA u8 gFormBattleTestOpponentValue = 0;
 EWRAM_DATA u8 gFormBattleTestPlayerResult = 0;
 EWRAM_DATA u8 gFormBattleTestOpponentResult = 0;
 EWRAM_DATA u8 gFormBattleTestError = 0;
+EWRAM_DATA u8 gFormBattleTestOwnsBattle = 0;
 EWRAM_DATA u8 gFormBattleTestBackPaletteNum = 0;
 EWRAM_DATA u8 gFormBattleTestFrontPaletteNum = 0;
 EWRAM_DATA u16 gFormBattleTestReadyMask = 0;
@@ -168,6 +169,46 @@ static bool8 FormBattleTestSpritesReady(u8 player, u8 opponent)
     return TRUE;
 }
 
+static bool8 FormBattleTestInstallPlayerSprite(u8 player)
+{
+    u8 position = GetBattlerPosition(player);
+    u8 oldSpriteId = gBattlerSpriteIds[player];
+    u8 spriteId;
+    struct Sprite *sprite;
+
+    if (oldSpriteId < MAX_SPRITES && gSprites[oldSpriteId].inUse)
+    {
+        FreeSpriteOamMatrix(&gSprites[oldSpriteId]);
+        FreeSpriteTiles(&gSprites[oldSpriteId]);
+        DestroySprite(&gSprites[oldSpriteId]);
+    }
+
+    gBattlerPartyIndexes[player] = 0;
+    BattleLoadPlayerMonSpriteGfx(&gPlayerParty[0], player);
+    SetMultiuseSpriteTemplateToPokemon(SPECIES_CASTFORM, position);
+    spriteId = CreateSprite(
+        &gMultiuseSpriteTemplate,
+        GetBattlerSpriteCoord(player, BATTLER_COORD_X_2),
+        GetBattlerSpriteDefault_Y(player),
+        GetBattlerSpriteSubpriority(player)
+    );
+    if (spriteId >= MAX_SPRITES)
+    {
+        gFormBattleTestError |= 16;
+        return FALSE;
+    }
+
+    gBattlerSpriteIds[player] = spriteId;
+    sprite = &gSprites[spriteId];
+    sprite->data[0] = player;
+    sprite->data[2] = SPECIES_CASTFORM;
+    sprite->oam.paletteNum = player;
+    sprite->callback = SpriteCallbackDummy;
+    sprite->invisible = FALSE;
+    StartSpriteAnim(sprite, CASTFORM_NORMAL);
+    return TRUE;
+}
+
 static void FormBattleTestAdvanceIntro(void)
 {
     u8 player;
@@ -178,8 +219,25 @@ static void FormBattleTestAdvanceIntro(void)
 
     player = GetBattlerAtPosition(B_POSITION_PLAYER_LEFT);
     opponent = GetBattlerAtPosition(B_POSITION_OPPONENT_LEFT);
-    if (!FormBattleTestSpritesReady(player, opponent)
-     && (gMain.vblankCounter1 & 31) == 0)
+    if (FormBattleTestSpritesReady(player, opponent))
+    {
+        gFormBattleTestOwnsBattle = 1;
+        return;
+    }
+
+    // A direct diagnostic boot reaches the wild opponent before the regular
+    // player send-out controller. Once that opponent owns its Pokémon buffer,
+    // install the player battler through the same loader/template path used by
+    // StartSendOutAnim, then keep intro tasks from replacing it.
+    if ((gFormBattleTestReadyMask & 32) != 0
+     && FormBattleTestInstallPlayerSprite(player))
+    {
+        gFormBattleTestOwnsBattle = 1;
+        FormBattleTestSpritesReady(player, opponent);
+        return;
+    }
+
+    if ((gMain.vblankCounter1 & 31) == 0)
         gMain.newKeys |= A_BUTTON;
 }
 
@@ -428,7 +486,7 @@ def instrument_battle_main(text: str) -> str:
     text = _replace_once(
         text,
         "    UpdatePaletteFade();\n    RunTasks();\n\n    if (JOY_HELD(B_BUTTON)",
-        "    UpdatePaletteFade();\n    FormBattleTestAdvanceIntro();\n    RunTasks();\n    FormBattleTestMain();\n\n    if (JOY_HELD(B_BUTTON)",
+        "    UpdatePaletteFade();\n    FormBattleTestAdvanceIntro();\n    if (!gFormBattleTestOwnsBattle)\n        RunTasks();\n    FormBattleTestMain();\n\n    if (JOY_HELD(B_BUTTON)",
         "BattleMainCB2 task call",
     )
     return text

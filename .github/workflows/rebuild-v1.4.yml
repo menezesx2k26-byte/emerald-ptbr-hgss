@@ -410,6 +410,8 @@ jobs:
             form-battle-build-v1.4.0-dev.1.log
             form-battle-mgba-v1.4.0-dev.1.log
             form-battle-v1.4.0-dev.1.sym
+            game/pokeemerald_modern.gba
+            mgba-build/mgba-headless
             mgba-form-battle/
             form_battle_instrumentation_v1.4.0-dev.1.json
             form_battle_validation_v1.4.0-dev.1.json
