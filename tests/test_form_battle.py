@@ -161,6 +161,7 @@ class FormBattleInstrumentationTests(unittest.TestCase):
             self.assertIn("CastformDataTypeChange(player)", battle_text)
             self.assertIn("GET_UNOWN_LETTER", battle_text)
             self.assertIn("BattleLoadPlayerMonSpriteGfx(&gPlayerParty[0]", battle_text)
+            self.assertIn("gMonSpritesGfxPtr->frameImages[playerPosition]", battle_text)
             self.assertEqual(len(report["cases"]), 9)
 
     def test_refuses_to_instrument_twice(self) -> None:

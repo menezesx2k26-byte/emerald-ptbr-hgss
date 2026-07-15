@@ -125,6 +125,8 @@ static bool8 FormBattleTestSpritesReady(u8 player, u8 opponent)
 {
     u8 playerSpriteId = gBattlerSpriteIds[player];
     u8 opponentSpriteId = gBattlerSpriteIds[opponent];
+    u8 playerPosition = GetBattlerPosition(player);
+    u8 opponentPosition = GetBattlerPosition(opponent);
 
     if (gBattlersCount != 2
      || gBattleMons[player].species != SPECIES_CASTFORM
@@ -137,6 +139,15 @@ static bool8 FormBattleTestSpritesReady(u8 player, u8 opponent)
      || !gSprites[opponentSpriteId].inUse
      || gSprites[playerSpriteId].invisible
      || gSprites[opponentSpriteId].invisible)
+        return FALSE;
+
+    // During the opening sequence gBattlerSpriteIds[player] still identifies
+    // the trainer back sprite. Wait until both IDs refer to the actual Pokémon
+    // templates and their species metadata has been installed.
+    if (gSprites[playerSpriteId].images != gMonSpritesGfxPtr->frameImages[playerPosition]
+     || gSprites[opponentSpriteId].images != gMonSpritesGfxPtr->frameImages[opponentPosition]
+     || gSprites[playerSpriteId].data[2] != SPECIES_CASTFORM
+     || gSprites[opponentSpriteId].data[2] != SPECIES_CASTFORM)
         return FALSE;
 
     return TRUE;
