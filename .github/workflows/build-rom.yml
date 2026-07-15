@@ -1,20 +1,7 @@
-name: Build Emerald PT-BR HGSS
+name: Regenerate PT-BR translation shards (maintenance)
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - "scripts/**"
-      - ".github/workflows/build-rom.yml"
-      - "README.md"
-  pull_request:
-    branches: [main]
-    paths:
-      - "scripts/**"
-      - ".github/workflows/build-rom.yml"
-      - "README.md"
-      - "BUILD_TRIGGER.md"
 
 permissions:
   contents: read

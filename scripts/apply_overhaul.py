@@ -25,7 +25,7 @@ def main() -> None:
     apply_map_overhaul(project)
     import_hgss_sprites(project, args.sprites_root.resolve())
     import_overworld_sprites(project, args.overworlds_root.resolve())
-    print("Visual overhaul v1.3 applied successfully")
+    print("Visual overhaul v1.3.1 applied successfully")
 
 
 if __name__ == "__main__":
