@@ -152,18 +152,35 @@ static bool8 FormBattleTestSpritesReady(u8 player, u8 opponent)
     // buffers as soon as both actual battler sprites are allocated. Visibility
     // and data fields are transient during the Poké Ball animation, so the
     // harness waits another 120 frames and normalizes them before sampling.
-    if (gSprites[playerSpriteId].images != gMonSpritesGfxPtr->frameImages[playerPosition]
-     || gSprites[opponentSpriteId].images != gMonSpritesGfxPtr->frameImages[opponentPosition])
+    if (gSprites[playerSpriteId].images == gMonSpritesGfxPtr->frameImages[playerPosition])
+        gFormBattleTestReadyMask |= 16;
+    if (gSprites[opponentSpriteId].images == gMonSpritesGfxPtr->frameImages[opponentPosition])
+        gFormBattleTestReadyMask |= 32;
+    if ((gFormBattleTestReadyMask & (16 | 32)) != (16 | 32))
         return FALSE;
-    gFormBattleTestReadyMask |= 16;
 
     if (!gSprites[playerSpriteId].invisible && !gSprites[opponentSpriteId].invisible)
-        gFormBattleTestReadyMask |= 32;
+        gFormBattleTestReadyMask |= 64;
     if (gSprites[playerSpriteId].data[2] == SPECIES_CASTFORM
      && gSprites[opponentSpriteId].data[2] == SPECIES_CASTFORM)
-        gFormBattleTestReadyMask |= 64;
+        gFormBattleTestReadyMask |= 128;
 
     return TRUE;
+}
+
+static void FormBattleTestAdvanceIntro(void)
+{
+    u8 player;
+    u8 opponent;
+
+    if (gFormBattleTestState != 0)
+        return;
+
+    player = GetBattlerAtPosition(B_POSITION_PLAYER_LEFT);
+    opponent = GetBattlerAtPosition(B_POSITION_OPPONENT_LEFT);
+    if (!FormBattleTestSpritesReady(player, opponent)
+     && (gMain.vblankCounter1 & 31) == 0)
+        gMain.newKeys |= A_BUTTON;
 }
 
 static void FormBattleTestFreezeAndPositionSprite(u8 battler, u16 species)
@@ -410,8 +427,8 @@ def instrument_battle_main(text: str) -> str:
     )
     text = _replace_once(
         text,
-        "    RunTasks();\n\n    if (JOY_HELD(B_BUTTON)",
-        "    RunTasks();\n    FormBattleTestMain();\n\n    if (JOY_HELD(B_BUTTON)",
+        "    UpdatePaletteFade();\n    RunTasks();\n\n    if (JOY_HELD(B_BUTTON)",
+        "    UpdatePaletteFade();\n    FormBattleTestAdvanceIntro();\n    RunTasks();\n    FormBattleTestMain();\n\n    if (JOY_HELD(B_BUTTON)",
         "BattleMainCB2 task call",
     )
     return text
