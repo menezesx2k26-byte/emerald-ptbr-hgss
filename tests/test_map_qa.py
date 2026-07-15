@@ -18,6 +18,7 @@ from instrument_map_qa import (  # noqa: E402
     OVERWORLD_MARKER,
     instrument_project,
 )
+from patch_mgba_headless_video import MARKER as MGBA_VIDEO_MARKER, patch_source  # noqa: E402
 from release import release_version  # noqa: E402
 from validate_map_qa import EXPECTED_CASES, validate  # noqa: E402
 
@@ -120,13 +121,29 @@ class MapQaInstrumentationTests(unittest.TestCase):
 class MapQaValidationTests(unittest.TestCase):
     def test_workflow_uses_framebuffer_frontend_for_screenshots(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
-        self.assertIn("-DBUILD_SDL=ON", workflow)
-        self.assertIn("xvfb-run -a mgba-build/sdl/mgba", workflow)
-        self.assertNotIn(
+        self.assertIn("patch_mgba_headless_video.py", workflow)
+        self.assertIn(
             'mgba-build/mgba-headless \\\n'
             '            --script "$GITHUB_WORKSPACE/scripts/mgba_map_qa.lua"',
             workflow,
         )
+
+    def test_headless_patch_installs_and_cleans_up_video_buffer(self) -> None:
+        source = '''static struct mCore* core;
+int main(void)
+{
+\tcore->init(core);
+loadError:
+\tcore->deinit(core);
+argsExit:
+\tfor (i = 0; i < 1; ++i)
+\t\tfree(items[i]);
+}
+'''
+        patched = patch_source(source)
+        self.assertIn(MGBA_VIDEO_MARKER, patched)
+        self.assertIn("core->setVideoBuffer(core, sHeadlessVideoBuffer, 256);", patched)
+        self.assertIn("free(sHeadlessVideoBuffer);", patched)
 
     def test_accepts_four_distinct_runtime_screenshots(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
