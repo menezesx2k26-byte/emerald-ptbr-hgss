@@ -90,6 +90,42 @@ P1_ASSEMBLY_REPLACEMENTS = (
             r"{STR_VAR_1} está lá em cima.$",
         ),
     ),
+    (
+        "data/maps/LittlerootTown_MaysHouse_1F/scripts.inc",
+        "RivalsHouse_1F_Text_MayWhoAreYou",
+        (
+            r"Ei?\nQuem... quem é você?\p",
+            r"... ... ... ... ... ... ... ...\p",
+            r"Ah, você é {JOGADOR}{KUN}.\nEntão sua mudança foi hoje.\p",
+            r"Hum... Eu sou MAY.\nPrazer em conhecer você!\p",
+            r"Eu...\nTenho o sonho de fazer amizade\lcom POKéMON do mundo inteiro.\p",
+            r"Eu... ouvi falar de você,\n{JOGADOR}{KUN}, pelo meu pai,\lPROF. BIRCH.\p",
+            r"Eu esperava que você fosse\nlegal, {JOGADOR}{KUN}, e que\lpudéssemos ser amigos.\p",
+            r"Que bobagem, não é?\nEu... acabei de conhecer\lvocê, {JOGADOR}{KUN}.\p",
+            r"Eheheh...\p",
+            r"Ah, não! Eu me esqueci!\p",
+            r"Eu deveria ajudar meu pai a\ncapturar alguns POKéMON\lselvagens!\p",
+            r"{JOGADOR}{KUN}, vejo você depois!$",
+        ),
+    ),
+    (
+        "data/maps/LittlerootTown_MaysHouse_1F/scripts.inc",
+        "RivalsHouse_1F_Text_BrendanWhoAreYou",
+        (
+            r"Ei!\nVocê...\p",
+            r"Quem é você?\p",
+            r"Ah, você é {JOGADOR}, não é?\nMudou-se para a casa ao lado,\lcerto?\p",
+            r"Eu não sabia que você era menina.\p",
+            r"Meu pai, PROF. BIRCH, disse que\nnosso novo vizinho era\lfilho de um LÍDER DE GINÁSIO.\p",
+            r"Então achei que fosse um garoto.\p",
+            r"Meu nome é BRENDAN.\nPrazer, vizinha!\p",
+            r"Ei, {JOGADOR}, você não tem\num POKéMON?\p",
+            r"Quer que eu capture um\npara você?\p",
+            r"Ah, droga, eu esqueci...\p",
+            r"Preciso ajudar meu pai a\ncapturar alguns POKéMON\lselvagens.\p",
+            r"Fica para outra hora, está bem?$",
+        ),
+    ),
 )
 
 
