@@ -26,9 +26,18 @@ personalidades verificadas. Tiles e paletas de frente e costas são validados
 separadamente. O harness só existe numa ROM diagnóstica efêmera; o SHA-256 da
 ROM jogável é conferido novamente depois do teste.
 
-A próxima entrega é substituir os quatro tilesets-piloto por arte própria, em
-vez de apenas paletas derivadas de Emerald. O escopo e os critérios estão em
-[`V1.4_ROADMAP.md`](V1.4_ROADMAP.md).
+O terceiro marco substitui os quatro clones recoloridos por um passe próprio e
+determinístico de pixel art. Oldale e Route 101 recebem caminhos quentes;
+Littleroot ganha solo e vegetação retrabalhados; Petalburg Woods usa um chão
+mais fechado com serrapilheira. Grama alta, copas e telhados também mudam em
+nível de pixel. Metatiles, atributos, mapas, bordas, colisões, warps e eventos
+permanecem byte a byte compatíveis com a base fixada.
+
+Além dos previews completos, uma ROM diagnóstica efêmera carrega os quatro
+mapas pelo fluxo nativo do motor e o mGBA salva screenshots 240×160. O validador
+confere VRAM, paletas, OAM, imagens distintas e o SHA da ROM jogável. O escopo,
+os critérios e a passagem humana estão em [`V1.4_ROADMAP.md`](V1.4_ROADMAP.md)
+e [`QA_CHECKLIST_v1.4.md`](QA_CHECKLIST_v1.4.md).
 
 ## Estado da v1.3.1
 
@@ -52,9 +61,10 @@ vez de apenas paletas derivadas de Emerald. O escopo e os critérios estão em
 
 ## Limites conhecidos
 
-“Inspirado em HGSS” não significa que todo o mapa foi redesenhado com arte
-original de HGSS. Os quatro mapas listados acima ainda reutilizam a geometria e
-os tiles de Emerald com novas paletas. Da mesma forma, a fonte pública fornece
+“Inspirado em HGSS” não significa arte extraída dos jogos de Nintendo DS. Os
+quatro mapas-piloto preservam a geometria de Emerald, mas na v1.4 os pixels dos
+tiles também são retrabalhados, em vez de receber somente novas paletas. Essa
+compatibilidade mantém colisões, eventos e progressão. Da mesma forma, a fonte pública fornece
 uma pose frontal por Pokémon; por isso o segundo quadro de `anim_front.png` é
 uma cópia estática na release v1.3.1. Formas alternativas de Unown e Castform
 também continuam com os assets da base nessa release.

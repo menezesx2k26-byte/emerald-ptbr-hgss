@@ -9,6 +9,7 @@ from PIL import Image
 
 from common import read_jasc
 from release import release_tag, release_version
+from render_map_previews import render_pilot_maps
 from sprites import (
     CASTFORM_FORM_SOURCES,
     UNOWN_FORM_SOURCES,
@@ -22,6 +23,52 @@ EXPECTED_LAYOUTS = {
     "OldaleTown_Layout": ("gTileset_HGSSGeneralTown", "gTileset_HGSSSmallTown"),
     "Route101_Layout": ("gTileset_HGSSGeneralTown", "gTileset_HGSSSmallTown"),
     "PetalburgWoods_Layout": ("gTileset_HGSSGeneralForest", "gTileset_HGSSForest"),
+}
+
+EXPECTED_TILESET_ART = {
+    "data/tilesets/primary/hgss_town": {
+        "source": "data/tilesets/primary/general",
+        "size": (128, 256),
+        "minimum_pixels_changed": 1000,
+        "minimum_tiles_changed": 70,
+    },
+    "data/tilesets/primary/hgss_forest": {
+        "source": "data/tilesets/primary/general",
+        "size": (128, 256),
+        "minimum_pixels_changed": 1000,
+        "minimum_tiles_changed": 70,
+    },
+    "data/tilesets/secondary/hgss_small_town": {
+        "source": "data/tilesets/secondary/petalburg",
+        "size": (128, 80),
+        "minimum_pixels_changed": 40,
+        "minimum_tiles_changed": 25,
+    },
+    "data/tilesets/secondary/hgss_forest": {
+        "source": "data/tilesets/secondary/rustboro",
+        "size": (128, 256),
+        "minimum_pixels_changed": 8,
+        "minimum_tiles_changed": 4,
+    },
+}
+
+EXPECTED_LAYOUT_FILE_HASHES = {
+    "LittlerootTown": {
+        "map.bin": "9bc2d52ac0f515a2af3a12483e3913aee3948531f91ca0547513f53ce92acf9d",
+        "border.bin": "aa298641e3346d9c7ac51454222ff057768946e61980fd82e4db65912df412fe",
+    },
+    "OldaleTown": {
+        "map.bin": "4e56863147c213125211821aabb09ea551675249e940a065720618bac79a9cfb",
+        "border.bin": "aa298641e3346d9c7ac51454222ff057768946e61980fd82e4db65912df412fe",
+    },
+    "Route101": {
+        "map.bin": "134cf07849968c1b3415df2205e5ba771cb26ba5484cc5d78a1e8d76e52f12ed",
+        "border.bin": "aa298641e3346d9c7ac51454222ff057768946e61980fd82e4db65912df412fe",
+    },
+    "PetalburgWoods": {
+        "map.bin": "053fc2e64d7065edaf0bfaa4b7504fef15ad808dc458f8b937cb3a2604495442",
+        "border.bin": "aa298641e3346d9c7ac51454222ff057768946e61980fd82e4db65912df412fe",
+    },
 }
 
 
@@ -336,12 +383,151 @@ def audit_maps(project: Path) -> dict[str, object]:
         found[name] = {"primary": str(actual[0]), "secondary": str(actual[1])}
         if actual != expected:
             problems.append(f"{name}: {actual} != {expected}")
+
+    report_path = project / f"map_art_{release_tag()}.json"
+    art_records: dict[str, dict[str, object]] = {}
+    if not report_path.exists():
+        problems.append(f"missing: {report_path}")
+    else:
+        source_report = json.loads(report_path.read_text(encoding="utf-8"))
+        if source_report.get("version") != release_version():
+            problems.append("map art report version does not match the release")
+        records = source_report.get("tilesets")
+        if not isinstance(records, list):
+            problems.append("map art report has no tilesets list")
+        else:
+            for record in records:
+                if not isinstance(record, dict) or not isinstance(record.get("destination"), str):
+                    problems.append("map art report contains an invalid tileset record")
+                    continue
+                destination = str(record["destination"])
+                if destination in art_records:
+                    problems.append(f"duplicate map art record: {destination}")
+                art_records[destination] = record
+            unexpected = sorted(set(art_records) - set(EXPECTED_TILESET_ART))
+            if unexpected:
+                problems.append(f"unexpected map art records: {', '.join(unexpected)}")
+
+    art_summary: dict[str, dict[str, object]] = {}
+    for destination, expected in EXPECTED_TILESET_ART.items():
+        record = art_records.get(destination)
+        if record is None:
+            problems.append(f"missing map art record: {destination}")
+            continue
+        source = str(expected["source"])
+        if record.get("source") != source:
+            problems.append(f"{destination}: source {record.get('source')!r} != {source!r}")
+        source_root = project / source
+        destination_root = project / destination
+        source_tiles = source_root / "tiles.png"
+        output_tiles = destination_root / "tiles.png"
+        problems.extend(inspect_indexed_image(output_tiles, expected["size"]))
+        if source_tiles.exists() and output_tiles.exists():
+            with Image.open(source_tiles) as source_image, Image.open(output_tiles) as output_image:
+                source_pixels = source_image.tobytes()
+                output_pixels = output_image.tobytes()
+            if len(source_pixels) != len(output_pixels):
+                problems.append(f"{destination}: source and output pixel lengths differ")
+                changed_pixels = 0
+                changed_tiles = 0
+            else:
+                changed_pixels = sum(left != right for left, right in zip(source_pixels, output_pixels))
+                changed_tiles = sum(
+                    source_pixels[index:index + 64] != output_pixels[index:index + 64]
+                    for index in range(0, len(source_pixels), 64)
+                )
+            if changed_pixels < int(expected["minimum_pixels_changed"]):
+                problems.append(f"{destination}: only {changed_pixels} pixels changed")
+            if changed_tiles < int(expected["minimum_tiles_changed"]):
+                problems.append(f"{destination}: only {changed_tiles} tiles changed")
+            if record.get("pixels_changed") != changed_pixels:
+                problems.append(f"{destination}: reported pixel change count is stale")
+            if record.get("tiles_changed") != changed_tiles:
+                problems.append(f"{destination}: reported tile change count is stale")
+            if record.get("source_tiles_sha256") != file_sha256(source_tiles):
+                problems.append(f"{destination}: source tiles SHA-256 mismatch")
+            if record.get("output_sha256") != file_sha256(output_tiles):
+                problems.append(f"{destination}: output tiles SHA-256 mismatch")
+        else:
+            changed_pixels = 0
+            changed_tiles = 0
+
+        for name in ("metatiles.bin", "metatile_attributes.bin"):
+            source_file = source_root / name
+            output_file = destination_root / name
+            if not source_file.exists() or not output_file.exists():
+                problems.append(f"{destination}: missing compatibility file {name}")
+            elif source_file.read_bytes() != output_file.read_bytes():
+                problems.append(f"{destination}: {name} differs from pinned geometry")
+        palette_count = 0
+        for index in range(16):
+            palette = destination_root / "palettes" / f"{index:02}.pal"
+            try:
+                read_jasc(palette)
+                palette_count += 1
+            except (FileNotFoundError, ValueError) as error:
+                problems.append(f"{destination}: invalid palette {index:02}: {error}")
+        art_summary[destination] = {
+            "source": source,
+            "pixels_changed": changed_pixels,
+            "tiles_changed": changed_tiles,
+            "palettes_valid": palette_count,
+            "tiles_sha256": file_sha256(output_tiles) if output_tiles.exists() else None,
+        }
+
+    geometry: dict[str, dict[str, str]] = {}
+    for directory, expected_files in EXPECTED_LAYOUT_FILE_HASHES.items():
+        geometry[directory] = {}
+        for filename, expected_hash in expected_files.items():
+            path = project / "data/layouts" / directory / filename
+            if not path.exists():
+                problems.append(f"missing layout geometry: {path}")
+                continue
+            actual_hash = file_sha256(path)
+            geometry[directory][filename] = actual_hash
+            if actual_hash != expected_hash:
+                problems.append(f"{directory}/{filename}: pinned geometry changed")
+
+    preview_report: dict[str, object] = {"maps": []}
+    try:
+        preview_dir = project / f"map-previews-{release_tag()}"
+        preview_report = render_pilot_maps(project, preview_dir)
+        expected_sizes = {
+            "LittlerootTown_Layout": (320, 320),
+            "OldaleTown_Layout": (320, 320),
+            "Route101_Layout": (320, 320),
+            "PetalburgWoods_Layout": (768, 704),
+        }
+        hashes: list[str] = []
+        for preview in preview_report["maps"]:
+            name = str(preview["layout"])
+            actual_size = (preview.get("width"), preview.get("height"))
+            if actual_size != expected_sizes.get(name):
+                problems.append(f"{name}: preview size {actual_size} is invalid")
+            if int(preview.get("colors", 0)) < 20:
+                problems.append(f"{name}: preview has too few colors")
+            hashes.append(str(preview.get("sha256")))
+        if len(hashes) != 4 or len(set(hashes)) != 4:
+            problems.append("pilot map previews are missing or duplicated")
+    except (FileNotFoundError, KeyError, OSError, TypeError, ValueError) as error:
+        problems.append(f"map preview rendering failed: {error}")
+
     return {
         "layouts_checked": len(EXPECTED_LAYOUTS),
         "layouts": found,
+        "tilesets_checked": len(EXPECTED_TILESET_ART),
+        "tileset_art": art_summary,
+        "geometry": geometry,
+        "previews": preview_report["maps"],
         "problems": problems,
         "valid": not problems,
-        "art_policy": "These four layouts use isolated Emerald tilesets with an HGSS-inspired palette treatment, not ripped HGSS map art.",
+        "art_policy": (
+            "Original deterministic GBA pixel-art treatment over pinned Emerald geometry; "
+            "the four tilesets are no longer palette-only clones and contain no ripped HGSS map art."
+        ),
+        "compatibility_policy": (
+            "Metatiles, attributes, map blockdata and borders remain byte-identical to the pinned base."
+        ),
     }
 
 

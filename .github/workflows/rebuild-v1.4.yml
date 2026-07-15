@@ -234,6 +234,8 @@ jobs:
             --report rom_validation_v1.4.0-dev.1.json
           cp game/overworld_import_v1.4.0-dev.1.json .
           cp game/form_import_v1.4.0-dev.1.json .
+          cp game/map_art_v1.4.0-dev.1.json .
+          cp -R game/map-previews-v1.4.0-dev.1 .
           python3 - <<'PY'
           import glob
           import json
@@ -315,9 +317,111 @@ jobs:
             --raw-report mgba-smoke/mgba_smoke_raw.json \
             --report mgba_smoke_validation_v1.4.0-dev.1.json
 
+      - name: Snapshot clean sources for the map QA ROM
+        id: map_qa_snapshot
+        if: steps.buildrom.outcome == 'success'
+        continue-on-error: true
+        run: |
+          mkdir -p map-qa-clean map-qa-game
+          cp game/src/main.c map-qa-clean/main.c
+          cp game/src/overworld.c map-qa-clean/overworld.c
+
+      - name: Instrument an ephemeral map QA ROM
+        id: map_qa_instrumentation
+        if: steps.map_qa_snapshot.outcome == 'success'
+        continue-on-error: true
+        run: |
+          python3 scripts/instrument_map_qa.py \
+            --project game \
+            --report map_qa_instrumentation_v1.4.0-dev.1.json
+
+      - name: Build the map QA diagnostic ROM
+        id: map_qa_build
+        if: steps.map_qa_instrumentation.outcome == 'success'
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          make -j"$(nproc)" all 2>&1 | tee "$GITHUB_WORKSPACE/map-qa-build-v1.4.0-dev.1.log"
+          test -f pokeemerald_modern.gba
+          test -f pokeemerald_modern.elf
+          cp pokeemerald_modern.gba "$GITHUB_WORKSPACE/map-qa-game/pokeemerald_modern.gba"
+          arm-none-eabi-nm -n pokeemerald_modern.elf \
+            > "$GITHUB_WORKSPACE/map-qa-v1.4.0-dev.1.sym"
+          test "$(grep -c ' gMapQaState$' "$GITHUB_WORKSPACE/map-qa-v1.4.0-dev.1.sym")" -eq 1
+          ! cmp -s pokeemerald_modern.gba "$GITHUB_WORKSPACE/Emerald_PTBR_HGSS_v1.4.0-dev.1.gba"
+          cd "$GITHUB_WORKSPACE"
+          sha256sum --check SHA256SUMS.txt
+        working-directory: game
+        env:
+          MODERN: "1"
+          COMPARE: "0"
+
+      - name: Run and capture the four pilot maps in mGBA
+        id: map_qa_test
+        if: steps.map_qa_build.outcome == 'success'
+        continue-on-error: true
+        env:
+          MGBA_MAP_QA_OUTPUT: ${{ github.workspace }}/map-qa
+          MGBA_MAP_QA_SYMBOLS: ${{ github.workspace }}/map-qa-v1.4.0-dev.1.sym
+        run: |
+          mkdir -p "$MGBA_MAP_QA_OUTPUT"
+          mgba-build/mgba-headless \
+            --script "$GITHUB_WORKSPACE/scripts/mgba_map_qa.lua" \
+            "$GITHUB_WORKSPACE/map-qa-game/pokeemerald_modern.gba" \
+            >map-qa-mgba-v1.4.0-dev.1.log 2>&1 &
+          mgba_pid=$!
+
+          complete=false
+          for _ in $(seq 1 600); do
+            if [[ -s "$MGBA_MAP_QA_OUTPUT/mgba_map_qa_raw.json" ]]; then
+              complete=true
+              break
+            fi
+            if ! kill -0 "$mgba_pid" 2>/dev/null; then
+              wait_status=0
+              wait "$mgba_pid" || wait_status=$?
+              cat map-qa-mgba-v1.4.0-dev.1.log
+              if [[ "$wait_status" -eq 0 ]]; then
+                wait_status=1
+              fi
+              exit "$wait_status"
+            fi
+            sleep 0.1
+          done
+
+          if [[ "$complete" != true ]]; then
+            kill -INT "$mgba_pid" 2>/dev/null || true
+            wait "$mgba_pid" || true
+            cat map-qa-mgba-v1.4.0-dev.1.log
+            echo "mGBA map QA report was not produced within 60 seconds"
+            exit 1
+          fi
+
+          kill -INT "$mgba_pid"
+          wait_status=0
+          wait "$mgba_pid" || wait_status=$?
+          cat map-qa-mgba-v1.4.0-dev.1.log
+          if [[ "$wait_status" -ne 0 ]]; then
+            exit "$wait_status"
+          fi
+
+          python3 scripts/validate_map_qa.py \
+            --raw-report map-qa/mgba_map_qa_raw.json \
+            --screenshots map-qa \
+            --report map_qa_validation_v1.4.0-dev.1.json
+          sha256sum --check SHA256SUMS.txt
+
+      - name: Restore clean sources after map QA instrumentation
+        id: map_qa_restore
+        if: always() && steps.map_qa_snapshot.outcome == 'success'
+        continue-on-error: true
+        run: |
+          cp map-qa-clean/main.c game/src/main.c
+          cp map-qa-clean/overworld.c game/src/overworld.c
+
       - name: Instrument an ephemeral form-battle diagnostic ROM
         id: form_battle_instrumentation
-        if: steps.buildrom.outcome == 'success'
+        if: steps.buildrom.outcome == 'success' && steps.map_qa_restore.outcome == 'success'
         continue-on-error: true
         run: |
           python3 scripts/instrument_form_battle_test.py \
@@ -407,12 +511,19 @@ jobs:
             build-v1.4.0-dev.1.log
             mgba-smoke-v1.4.0-dev.1.log
             mgba-smoke/
+            map-qa-build-v1.4.0-dev.1.log
+            map-qa-mgba-v1.4.0-dev.1.log
+            map-qa-v1.4.0-dev.1.sym
+            map-qa-game/pokeemerald_modern.gba
+            map-qa/
             form-battle-build-v1.4.0-dev.1.log
             form-battle-mgba-v1.4.0-dev.1.log
             form-battle-v1.4.0-dev.1.sym
             game/pokeemerald_modern.gba
             mgba-build/mgba-headless
             mgba-form-battle/
+            map_qa_instrumentation_v1.4.0-dev.1.json
+            map_qa_validation_v1.4.0-dev.1.json
             form_battle_instrumentation_v1.4.0-dev.1.json
             form_battle_validation_v1.4.0-dev.1.json
             translation_sanitizer_v1.4.0-dev.1.json
@@ -422,6 +533,8 @@ jobs:
             charmap_normalization_v1.4.0-dev.1.json
             charmap_sanitizer_v1.4.0-dev.1.json
             visual_audit_v1.4.0-dev.1.json
+            map_art_v1.4.0-dev.1.json
+            map-previews-v1.4.0-dev.1/
             form_import_v1.4.0-dev.1.json
             rom_validation_v1.4.0-dev.1.json
             mgba_smoke_validation_v1.4.0-dev.1.json
@@ -430,6 +543,16 @@ jobs:
 
       - name: Stop on mGBA smoke failure
         if: steps.buildrom.outcome == 'success' && steps.mgba_smoke.outcome != 'success'
+        run: exit 1
+
+      - name: Stop on map QA validation failure
+        if: >-
+          steps.buildrom.outcome == 'success' &&
+          (steps.map_qa_snapshot.outcome != 'success' ||
+           steps.map_qa_instrumentation.outcome != 'success' ||
+           steps.map_qa_build.outcome != 'success' ||
+           steps.map_qa_test.outcome != 'success' ||
+           steps.map_qa_restore.outcome != 'success')
         run: exit 1
 
       - name: Stop on battle-form validation failure
@@ -449,6 +572,8 @@ jobs:
             SHA256SUMS.txt
             overworld_import_v1.4.0-dev.1.json
             form_import_v1.4.0-dev.1.json
+            map_art_v1.4.0-dev.1.json
+            map-previews-v1.4.0-dev.1/
             translation_consistency_v1.4.0-dev.1.json
             translation_sanitizer_v1.4.0-dev.1.json
             translation_token_repair_v1.4.0-dev.1.json
@@ -460,9 +585,14 @@ jobs:
             rom_validation_v1.4.0-dev.1.json
             mgba_smoke_validation_v1.4.0-dev.1.json
             mgba-smoke/mgba_smoke_raw.json
+            map_qa_instrumentation_v1.4.0-dev.1.json
+            map_qa_validation_v1.4.0-dev.1.json
+            map-qa/mgba_map_qa_raw.json
+            map-qa/map_qa_*.png
             form_battle_instrumentation_v1.4.0-dev.1.json
             form_battle_validation_v1.4.0-dev.1.json
             mgba-form-battle/mgba_form_battle_raw.json
             V1.4_ROADMAP.md
+            QA_CHECKLIST_v1.4.md
           if-no-files-found: error
           retention-days: 30
