@@ -3,6 +3,42 @@
 Overhaul de Pokémon Emerald com localização em português brasileiro e uma
 direção visual inspirada em HeartGold/SoulSilver.
 
+## v1.4 em desenvolvimento
+
+A v1.4 começou pela remoção dos segundos quadros estáticos de batalha. As
+animações convencionais e as formas de Unown preservam a pose e a paleta HGSS
+no primeiro quadro e geram um movimento ocioso sutil, de um pixel, no segundo.
+Castform é a exceção estrutural: cada forma mantém um único quadro 64×64,
+porque os quatro índices de animação do motor selecionam Normal, Sunny, Rainy e
+Snowy. A auditoria valida as duas políticas e bloqueia divergências entre
+`front.png` e o primeiro quadro importado.
+
+A segunda entrega importa as 27 formas alternativas de Unown e Castform Sunny,
+Rainy e Snowy da mesma coleção HGSS fixada por commit. Unown usa a paleta
+compartilhada esperada pelo motor; cada forma climática de Castform preserva
+seu próprio par normal/shiny. O relatório registra a procedência e os hashes e
+audita os 30 conjuntos antes da compilação.
+
+A troca de formas também ganhou um teste instrumentado no mGBA. Dentro de uma
+batalha real, o motor percorre Castform Sunny, Rainy, Snowy e normal pela lógica
+nativa de clima, depois renderiza Unown A, B, Z, `!` e `?` a partir de
+personalidades verificadas. Tiles e paletas de frente e costas são validados
+separadamente. O harness só existe numa ROM diagnóstica efêmera; o SHA-256 da
+ROM jogável é conferido novamente depois do teste.
+
+O terceiro marco substitui os quatro clones recoloridos por um passe próprio e
+determinístico de pixel art. Oldale e Route 101 recebem caminhos quentes;
+Littleroot ganha solo e vegetação retrabalhados; Petalburg Woods usa um chão
+mais fechado com serrapilheira. Grama alta, copas e telhados também mudam em
+nível de pixel. Metatiles, atributos, mapas, bordas, colisões, warps e eventos
+permanecem byte a byte compatíveis com a base fixada.
+
+Além dos previews completos, uma ROM diagnóstica efêmera carrega os quatro
+mapas pelo fluxo nativo do motor e o mGBA salva screenshots 240×160. O validador
+confere VRAM, paletas, OAM, imagens distintas e o SHA da ROM jogável. O escopo,
+os critérios e a passagem humana estão em [`V1.4_ROADMAP.md`](V1.4_ROADMAP.md)
+e [`QA_CHECKLIST_v1.4.md`](QA_CHECKLIST_v1.4.md).
+
 ## Estado da v1.3.1
 
 - 386 Pokémon com sprites de batalha frontais, traseiros, normais e shiny da
@@ -25,12 +61,13 @@ direção visual inspirada em HeartGold/SoulSilver.
 
 ## Limites conhecidos
 
-“Inspirado em HGSS” não significa que todo o mapa foi redesenhado com arte
-original de HGSS. Os quatro mapas listados acima ainda reutilizam a geometria e
-os tiles de Emerald com novas paletas. Da mesma forma, a fonte pública fornece
+“Inspirado em HGSS” não significa arte extraída dos jogos de Nintendo DS. Os
+quatro mapas-piloto preservam a geometria de Emerald, mas na v1.4 os pixels dos
+tiles também são retrabalhados, em vez de receber somente novas paletas. Essa
+compatibilidade mantém colisões, eventos e progressão. Da mesma forma, a fonte pública fornece
 uma pose frontal por Pokémon; por isso o segundo quadro de `anim_front.png` é
-uma cópia estática. Formas alternativas de Unown e Castform também continuam
-com os assets da base.
+uma cópia estática na release v1.3.1. Formas alternativas de Unown e Castform
+também continuam com os assets da base nessa release.
 
 Esses pontos são trabalho de arte e animação para uma v1.4, não defeitos que a
 pipeline da v1.3.1 possa corrigir automaticamente.

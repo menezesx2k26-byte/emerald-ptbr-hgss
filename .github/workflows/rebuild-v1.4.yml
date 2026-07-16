@@ -1,0 +1,683 @@
+name: Rebuild Emerald PT-BR HGSS v1.4.0-dev.1
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main, agent/v1.3.1-stabilization]
+    paths:
+      - ".github/workflows/rebuild-v1.4.yml"
+      - "scripts/**"
+      - "tests/**"
+      - "translation/**"
+      - "V1.4_ROADMAP.md"
+      - "README.md"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: emerald-ptbr-hgss-v1.4.0-dev.1-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  EMERALD_RELEASE_VERSION: 1.4.0-dev.1
+  BASE_REPOSITORY: https://github.com/lucmsilva651/esmeralda-ptbr.git
+  BASE_SHA: 16899178c5d9b198b961c3e38389ccccbdff7836
+  POKEAPI_SPRITES_SHA: bf4c47ac82c33b330e33d98b8882d1cedb2f53e7
+  TEAM_AQUA_ASSETS_SHA: 36b619ecd1d2df95212b375c95803af78414f78a
+  AGBCC_SHA: da598c1d918402c42c0c0d7128ba14567f3175e9
+  MGBA_SHA: 5157ce208a5965e8a47bf5b48b5aae5198c22a5e
+
+jobs:
+  quality:
+    name: Validate integration scripts
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout integration scripts
+        uses: actions/checkout@v4
+
+      - name: Install test dependencies
+        run: python3 -m pip install pillow
+
+      - name: Run unit tests
+        run: python3 -m unittest discover -s tests -v
+
+      - name: Compile-check Python scripts
+        run: python3 -m compileall -q scripts tests
+
+  rebuild:
+    name: Build playable ROM
+    needs: quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout integration scripts
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            gcc-arm-none-eabi \
+            binutils-arm-none-eabi \
+            cmake \
+            ninja-build \
+            libpng-dev \
+            liblua5.4-dev \
+            zlib1g-dev \
+            python3-pil \
+            git
+
+      - name: Checkout pinned PT-BR source
+        run: |
+          git clone --filter=blob:none --no-checkout "$BASE_REPOSITORY" game
+          git -C game checkout --detach "$BASE_SHA"
+          test "$(git -C game rev-parse HEAD)" = "$BASE_SHA"
+
+      - name: Restore versioned translation shards
+        run: |
+          mkdir translation-output
+          cp translation/v1.3/translation-shard-*.json translation-output/
+          cp translation/v1.3/translation-shard-*.patch.gz translation-output/
+          gzip -d translation-output/translation-shard-*.patch.gz
+          test "$(find translation-output -name 'translation-shard-*.patch' | wc -l)" -eq 4
+
+      - name: Apply PT-BR translation patches
+        run: |
+          for patch in translation-output/translation-shard-*.patch; do
+            echo "Applying ${patch}"
+            git -C game apply --whitespace=nowarn "$GITHUB_WORKSPACE/$patch"
+          done
+          test "$(find translation-output -name 'translation-shard-*.patch' | wc -l)" -eq 4
+
+      - name: Sanitize translated text
+        run: |
+          python3 scripts/sanitize_translated_text.py \
+            --project game \
+            --report translation_sanitizer_v1.4.0-dev.1.json
+
+      - name: Repair corrupted translation tokens
+        run: |
+          python3 scripts/repair_translation_tokens.py \
+            --project game \
+            --report translation_token_repair_v1.4.0-dev.1.json
+
+      - name: Apply reviewed PT-BR dialogue fixes
+        run: |
+          python3 scripts/apply_manual_ptbr_fixes.py \
+            --project game \
+            --report manual_ptbr_fixes_v1.4.0-dev.1.json
+
+      - name: Normalize display quotes
+        run: |
+          python3 scripts/sanitize_display_quotes.py \
+            --project game \
+            --report display_quote_sanitizer_v1.4.0-dev.1.json
+
+      - name: Normalize and validate PT-BR charmap
+        run: |
+          python3 scripts/normalize_charmap_ptbr.py \
+            --project game \
+            --report charmap_normalization_v1.4.0-dev.1.json
+          python3 scripts/sanitize_charmap_text.py \
+            --project game \
+            --report charmap_sanitizer_v1.4.0-dev.1.json
+
+      - name: Checkout pinned HGSS Pokémon sprite assets
+        run: |
+          git clone --filter=blob:none --no-checkout \
+            https://github.com/PokeAPI/sprites.git pokeapi-sprites
+          git -C pokeapi-sprites sparse-checkout init --cone
+          git -C pokeapi-sprites sparse-checkout set \
+            sprites/pokemon/versions/generation-iv/heartgold-soulsilver
+          git -C pokeapi-sprites checkout --detach "$POKEAPI_SPRITES_SHA"
+          test "$(git -C pokeapi-sprites rev-parse HEAD)" = "$POKEAPI_SPRITES_SHA"
+          test -f pokeapi-sprites/sprites/pokemon/versions/generation-iv/heartgold-soulsilver/1.png
+          test -f pokeapi-sprites/sprites/pokemon/versions/generation-iv/heartgold-soulsilver/back/shiny/386.png
+          test -f pokeapi-sprites/sprites/pokemon/versions/generation-iv/heartgold-soulsilver/201-z.png
+          test -f pokeapi-sprites/sprites/pokemon/versions/generation-iv/heartgold-soulsilver/back/shiny/201-question.png
+          test -f pokeapi-sprites/sprites/pokemon/versions/generation-iv/heartgold-soulsilver/10013.png
+          test -f pokeapi-sprites/sprites/pokemon/versions/generation-iv/heartgold-soulsilver/back/shiny/10015.png
+
+      - name: Checkout pinned human overworld assets
+        run: |
+          git clone --filter=blob:none --no-checkout \
+            https://github.com/TeamAquasHideout/Team-Aquas-Asset-Repo.git team-aqua-assets
+          git -C team-aqua-assets sparse-checkout init --cone
+          git -C team-aqua-assets sparse-checkout set \
+            "Overworld Trainer Sprites/RavePossum/Poffin-Case-Overworlds-Converted"
+          git -C team-aqua-assets checkout --detach "$TEAM_AQUA_ASSETS_SHA"
+          test "$(git -C team-aqua-assets rev-parse HEAD)" = "$TEAM_AQUA_ASSETS_SHA"
+          test -f "team-aqua-assets/Overworld Trainer Sprites/RavePossum/Poffin-Case-Overworlds-Converted/brendan/walking.png"
+          test -f "team-aqua-assets/Overworld Trainer Sprites/RavePossum/Poffin-Case-Overworlds-Converted/youngster.png"
+
+      - name: Apply visual overhaul v1.4.0-dev.1
+        run: |
+          python3 scripts/apply_overhaul.py \
+            --project game \
+            --sprites-root pokeapi-sprites/sprites/pokemon/versions/generation-iv/heartgold-soulsilver \
+            --overworlds-root "team-aqua-assets/Overworld Trainer Sprites/RavePossum/Poffin-Case-Overworlds-Converted"
+          test -f game/quick_start_v1.4.0-dev.1.json
+          grep -q 'SetMainCallback2(CB2_InitMainMenu); /\* V14_QUICK_START \*/' game/src/intro.c
+          grep -q 'SetSaveBlocksPointers(GetSaveBlocksPointersBaseOffset());' game/src/intro.c
+          grep -q 'Task_NewGameBirchSpeech_BoyOrGirl; /\* V14_QUICK_START \*/' game/src/main_menu.c
+
+      - name: Audit imported visual assets
+        run: |
+          python3 scripts/audit_visual_assets.py \
+            --project game \
+            --report visual_audit_v1.4.0-dev.1.json
+
+      - name: Build and install pinned agbcc
+        run: |
+          git clone --filter=blob:none --no-checkout https://github.com/pret/agbcc.git agbcc
+          git -C agbcc checkout --detach "$AGBCC_SHA"
+          test "$(git -C agbcc rev-parse HEAD)" = "$AGBCC_SHA"
+          cd agbcc
+          ./build.sh
+          ./install.sh ../game
+
+      - name: Build pinned mGBA headless with screenshot buffer
+        run: |
+          git clone --filter=blob:none --no-checkout https://github.com/mgba-emu/mgba.git mgba
+          git -C mgba checkout --detach "$MGBA_SHA"
+          test "$(git -C mgba rev-parse HEAD)" = "$MGBA_SHA"
+          python3 scripts/patch_mgba_headless_video.py \
+            --source mgba/src/platform/headless-main.c
+          grep -q 'MAP_QA_HEADLESS_VIDEO_BUFFER' mgba/src/platform/headless-main.c
+          cmake -S mgba -B mgba-build -G Ninja \
+            -DBUILD_HEADLESS=ON \
+            -DBUILD_QT=OFF \
+            -DBUILD_SDL=OFF \
+            -DBUILD_GL=OFF \
+            -DBUILD_GLES2=OFF \
+            -DBUILD_GLES3=OFF \
+            -DBUILD_SHARED=OFF \
+            -DBUILD_STATIC=ON \
+            -DM_CORE_GB=OFF \
+            -DENABLE_DEBUGGERS=OFF \
+            -DENABLE_GDB_STUB=OFF \
+            -DENABLE_SCRIPTING=ON \
+            -DUSE_LUA=5.4 \
+            -DUSE_PNG=ON \
+            -DUSE_ZLIB=ON \
+            -DUSE_FFMPEG=OFF \
+            -DUSE_LIBZIP=OFF \
+            -DUSE_SQLITE3=OFF \
+            -DUSE_ELF=OFF \
+            -DUSE_EDITLINE=OFF \
+            -DUSE_FREETYPE=OFF \
+            -DUSE_DISCORD_RPC=OFF \
+            -DUSE_LZMA=OFF \
+            -DUSE_MINIZIP=OFF \
+            -DUSE_JSON_C=OFF
+          cmake --build mgba-build --target mgba-headless
+          test -x mgba-build/mgba-headless
+
+      - name: Build ROM with full diagnostics
+        id: buildrom
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          make -j"$(nproc)" all 2>&1 | tee "$GITHUB_WORKSPACE/build-v1.4.0-dev.1.log"
+        working-directory: game
+        env:
+          MODERN: "1"
+          COMPARE: "0"
+
+      - name: Stop on build failure
+        if: steps.buildrom.outcome != 'success'
+        run: exit 1
+
+      - name: Prepare and validate artifact
+        run: |
+          test -f game/pokeemerald_modern.gba
+          cp game/pokeemerald_modern.gba Emerald_PTBR_HGSS_v1.4.0-dev.1.gba
+          sha256sum Emerald_PTBR_HGSS_v1.4.0-dev.1.gba | tee SHA256SUMS.txt
+          python3 scripts/validate_rom.py \
+            --rom Emerald_PTBR_HGSS_v1.4.0-dev.1.gba \
+            --report rom_validation_v1.4.0-dev.1.json
+          arm-none-eabi-nm -n game/pokeemerald_modern.elf \
+            > production-v1.4.0-dev.1.sym
+          test "$(grep -c ' CB2_MainMenu$' production-v1.4.0-dev.1.sym)" -eq 1
+          test "$(grep -c ' Task_NewGameBirchSpeech_ChooseGender$' production-v1.4.0-dev.1.sym)" -eq 1
+          test "$(grep -c ' CB2_NamingScreen$' production-v1.4.0-dev.1.sym)" -eq 1
+          cp game/overworld_import_v1.4.0-dev.1.json .
+          cp game/quick_start_v1.4.0-dev.1.json .
+          cp game/form_import_v1.4.0-dev.1.json .
+          cp game/map_art_v1.4.0-dev.1.json .
+          cp -R game/map-previews-v1.4.0-dev.1 .
+          python3 - <<'PY'
+          import glob
+          import json
+          import os
+          from pathlib import Path
+
+          reports = [
+              json.loads(Path(path).read_text(encoding="utf-8"))
+              for path in sorted(glob.glob("translation-output/translation-shard-*.json"))
+          ]
+          summary = {
+              "version": os.environ["EMERALD_RELEASE_VERSION"],
+              "shards": len(reports),
+              "text_segments_translated": sum(item["text_segments_translated"] for item in reports),
+              "files_changed": sum(item["files_changed"] for item in reports),
+              "assembly_blocks_translated": sum(item["assembly_blocks_translated"] for item in reports),
+              "c_strings_translated": sum(item["c_strings_translated"] for item in reports),
+              "reviewed_ptbr_fixes": 15,
+              "move_names_policy": "English move names and descriptions preserved",
+              "excluded_move_files": [
+                  "src/data/text/move_names.h",
+                  "src/data/text/move_descriptions.h",
+              ],
+          }
+          Path("translation_consistency_v1.4.0-dev.1.json").write_text(
+              json.dumps(summary, indent=2, ensure_ascii=False) + "\n",
+              encoding="utf-8",
+          )
+          PY
+
+      - name: Run headless mGBA boot and video-memory smoke test
+        id: mgba_smoke
+        continue-on-error: true
+        env:
+          MGBA_SMOKE_OUTPUT: ${{ github.workspace }}/mgba-smoke
+        run: |
+          mkdir -p "$MGBA_SMOKE_OUTPUT"
+          mgba-build/mgba-headless \
+            --script "$GITHUB_WORKSPACE/scripts/mgba_smoke.lua" \
+            "$GITHUB_WORKSPACE/Emerald_PTBR_HGSS_v1.4.0-dev.1.gba" \
+            >mgba-smoke-v1.4.0-dev.1.log 2>&1 &
+          mgba_pid=$!
+
+          complete=false
+          for _ in $(seq 1 300); do
+            if [[ -s "$MGBA_SMOKE_OUTPUT/mgba_smoke_raw.json" ]]; then
+              complete=true
+              break
+            fi
+            if ! kill -0 "$mgba_pid" 2>/dev/null; then
+              wait_status=0
+              wait "$mgba_pid" || wait_status=$?
+              cat mgba-smoke-v1.4.0-dev.1.log
+              if [[ "$wait_status" -eq 0 ]]; then
+                wait_status=1
+              fi
+              exit "$wait_status"
+            fi
+            sleep 0.1
+          done
+
+          if [[ "$complete" != true ]]; then
+            kill -INT "$mgba_pid" 2>/dev/null || true
+            wait "$mgba_pid" || true
+            cat mgba-smoke-v1.4.0-dev.1.log
+            echo "mGBA smoke report was not produced within 30 seconds"
+            exit 1
+          fi
+
+          kill -INT "$mgba_pid"
+          wait_status=0
+          wait "$mgba_pid" || wait_status=$?
+          cat mgba-smoke-v1.4.0-dev.1.log
+          if [[ "$wait_status" -ne 0 ]]; then
+            exit "$wait_status"
+          fi
+
+          python3 scripts/validate_mgba_smoke.py \
+            --raw-report mgba-smoke/mgba_smoke_raw.json \
+            --report mgba_smoke_validation_v1.4.0-dev.1.json
+
+      - name: Exercise the compact new-game flow in the production ROM
+        id: quick_start_qa
+        if: steps.buildrom.outcome == 'success'
+        continue-on-error: true
+        env:
+          MGBA_QUICK_START_OUTPUT: ${{ github.workspace }}/quick-start
+          MGBA_QUICK_START_SYMBOLS: ${{ github.workspace }}/production-v1.4.0-dev.1.sym
+        run: |
+          mkdir -p "$MGBA_QUICK_START_OUTPUT"
+          mgba-build/mgba-headless \
+            --script "$GITHUB_WORKSPACE/scripts/mgba_quick_start_qa.lua" \
+            "$GITHUB_WORKSPACE/Emerald_PTBR_HGSS_v1.4.0-dev.1.gba" \
+            >quick-start-mgba-v1.4.0-dev.1.log 2>&1 &
+          mgba_pid=$!
+
+          complete=false
+          for _ in $(seq 1 600); do
+            if [[ -s "$MGBA_QUICK_START_OUTPUT/mgba_quick_start_raw.json" ]]; then
+              complete=true
+              break
+            fi
+            if ! kill -0 "$mgba_pid" 2>/dev/null; then
+              wait_status=0
+              wait "$mgba_pid" || wait_status=$?
+              cat quick-start-mgba-v1.4.0-dev.1.log
+              if [[ "$wait_status" -eq 0 ]]; then
+                wait_status=1
+              fi
+              exit "$wait_status"
+            fi
+            sleep 0.1
+          done
+
+          if [[ "$complete" != true ]]; then
+            kill -INT "$mgba_pid" 2>/dev/null || true
+            wait "$mgba_pid" || true
+            cat quick-start-mgba-v1.4.0-dev.1.log
+            echo "Quick-start mGBA report was not produced within 60 seconds"
+            exit 1
+          fi
+
+          kill -INT "$mgba_pid"
+          wait_status=0
+          wait "$mgba_pid" || wait_status=$?
+          cat quick-start-mgba-v1.4.0-dev.1.log
+          if [[ "$wait_status" -ne 0 ]]; then
+            exit "$wait_status"
+          fi
+
+          python3 scripts/validate_quick_start_qa.py \
+            --raw-report quick-start/mgba_quick_start_raw.json \
+            --screenshots quick-start \
+            --report quick_start_qa_validation_v1.4.0-dev.1.json
+          sha256sum --check SHA256SUMS.txt
+
+      - name: Snapshot clean sources for the map QA ROM
+        id: map_qa_snapshot
+        if: steps.buildrom.outcome == 'success'
+        continue-on-error: true
+        run: |
+          mkdir -p map-qa-clean map-qa-game
+          cp game/src/main.c map-qa-clean/main.c
+          cp game/src/overworld.c map-qa-clean/overworld.c
+
+      - name: Instrument an ephemeral map QA ROM
+        id: map_qa_instrumentation
+        if: steps.map_qa_snapshot.outcome == 'success'
+        continue-on-error: true
+        run: |
+          python3 scripts/instrument_map_qa.py \
+            --project game \
+            --report map_qa_instrumentation_v1.4.0-dev.1.json
+
+      - name: Build the map QA diagnostic ROM
+        id: map_qa_build
+        if: steps.map_qa_instrumentation.outcome == 'success'
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          make -j"$(nproc)" all 2>&1 | tee "$GITHUB_WORKSPACE/map-qa-build-v1.4.0-dev.1.log"
+          test -f pokeemerald_modern.gba
+          test -f pokeemerald_modern.elf
+          cp pokeemerald_modern.gba "$GITHUB_WORKSPACE/map-qa-game/pokeemerald_modern.gba"
+          arm-none-eabi-nm -n pokeemerald_modern.elf \
+            > "$GITHUB_WORKSPACE/map-qa-v1.4.0-dev.1.sym"
+          test "$(grep -c ' gMapQaState$' "$GITHUB_WORKSPACE/map-qa-v1.4.0-dev.1.sym")" -eq 1
+          ! cmp -s pokeemerald_modern.gba "$GITHUB_WORKSPACE/Emerald_PTBR_HGSS_v1.4.0-dev.1.gba"
+          cd "$GITHUB_WORKSPACE"
+          sha256sum --check SHA256SUMS.txt
+        working-directory: game
+        env:
+          MODERN: "1"
+          COMPARE: "0"
+
+      - name: Run and capture the four pilot maps in mGBA
+        id: map_qa_test
+        if: steps.map_qa_build.outcome == 'success'
+        continue-on-error: true
+        env:
+          MGBA_MAP_QA_OUTPUT: ${{ github.workspace }}/map-qa
+          MGBA_MAP_QA_SYMBOLS: ${{ github.workspace }}/map-qa-v1.4.0-dev.1.sym
+        run: |
+          mkdir -p "$MGBA_MAP_QA_OUTPUT"
+          mgba-build/mgba-headless \
+            --script "$GITHUB_WORKSPACE/scripts/mgba_map_qa.lua" \
+            "$GITHUB_WORKSPACE/map-qa-game/pokeemerald_modern.gba" \
+            >map-qa-mgba-v1.4.0-dev.1.log 2>&1 &
+          mgba_pid=$!
+
+          complete=false
+          for _ in $(seq 1 600); do
+            if [[ -s "$MGBA_MAP_QA_OUTPUT/mgba_map_qa_raw.json" ]]; then
+              complete=true
+              break
+            fi
+            if ! kill -0 "$mgba_pid" 2>/dev/null; then
+              wait_status=0
+              wait "$mgba_pid" || wait_status=$?
+              cat map-qa-mgba-v1.4.0-dev.1.log
+              if [[ "$wait_status" -eq 0 ]]; then
+                wait_status=1
+              fi
+              exit "$wait_status"
+            fi
+            sleep 0.1
+          done
+
+          if [[ "$complete" != true ]]; then
+            kill -INT "$mgba_pid" 2>/dev/null || true
+            wait "$mgba_pid" || true
+            cat map-qa-mgba-v1.4.0-dev.1.log
+            echo "mGBA map QA report was not produced within 60 seconds"
+            exit 1
+          fi
+
+          kill -INT "$mgba_pid"
+          wait_status=0
+          wait "$mgba_pid" || wait_status=$?
+          cat map-qa-mgba-v1.4.0-dev.1.log
+          if [[ "$wait_status" -ne 0 ]]; then
+            exit "$wait_status"
+          fi
+
+          python3 scripts/validate_map_qa.py \
+            --raw-report map-qa/mgba_map_qa_raw.json \
+            --screenshots map-qa \
+            --report map_qa_validation_v1.4.0-dev.1.json
+          python3 scripts/compose_map_qa_sheet.py \
+            --screenshots map-qa \
+            --output map-qa/map_qa_contact_sheet.png \
+            --emit-base64
+          sha256sum --check SHA256SUMS.txt
+
+      - name: Restore clean sources after map QA instrumentation
+        id: map_qa_restore
+        if: always() && steps.map_qa_snapshot.outcome == 'success'
+        continue-on-error: true
+        run: |
+          cp map-qa-clean/main.c game/src/main.c
+          cp map-qa-clean/overworld.c game/src/overworld.c
+
+      - name: Instrument an ephemeral form-battle diagnostic ROM
+        id: form_battle_instrumentation
+        if: steps.buildrom.outcome == 'success' && steps.map_qa_restore.outcome == 'success'
+        continue-on-error: true
+        run: |
+          python3 scripts/instrument_form_battle_test.py \
+            --project game \
+            --report form_battle_instrumentation_v1.4.0-dev.1.json
+
+      - name: Build the form-battle diagnostic ROM
+        id: form_battle_build
+        if: steps.form_battle_instrumentation.outcome == 'success'
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          make -j"$(nproc)" all 2>&1 | tee "$GITHUB_WORKSPACE/form-battle-build-v1.4.0-dev.1.log"
+          test -f pokeemerald_modern.gba
+          test -f pokeemerald_modern.elf
+          arm-none-eabi-nm -n pokeemerald_modern.elf \
+            > "$GITHUB_WORKSPACE/form-battle-v1.4.0-dev.1.sym"
+          test "$(grep -c ' gFormBattleTestState$' "$GITHUB_WORKSPACE/form-battle-v1.4.0-dev.1.sym")" -eq 1
+          ! cmp -s pokeemerald_modern.gba "$GITHUB_WORKSPACE/Emerald_PTBR_HGSS_v1.4.0-dev.1.gba"
+          cd "$GITHUB_WORKSPACE"
+          sha256sum --check SHA256SUMS.txt
+        working-directory: game
+        env:
+          MODERN: "1"
+          COMPARE: "0"
+
+      - name: Run the instrumented battle-form test in mGBA
+        id: form_battle_test
+        if: steps.form_battle_build.outcome == 'success'
+        continue-on-error: true
+        env:
+          MGBA_FORM_BATTLE_OUTPUT: ${{ github.workspace }}/mgba-form-battle
+          MGBA_FORM_BATTLE_SYMBOLS: ${{ github.workspace }}/form-battle-v1.4.0-dev.1.sym
+        run: |
+          mkdir -p "$MGBA_FORM_BATTLE_OUTPUT"
+          mgba-build/mgba-headless \
+            --script "$GITHUB_WORKSPACE/scripts/mgba_form_battle.lua" \
+            "$GITHUB_WORKSPACE/game/pokeemerald_modern.gba" \
+            >form-battle-mgba-v1.4.0-dev.1.log 2>&1 &
+          mgba_pid=$!
+
+          complete=false
+          for _ in $(seq 1 600); do
+            if [[ -s "$MGBA_FORM_BATTLE_OUTPUT/mgba_form_battle_raw.json" ]]; then
+              complete=true
+              break
+            fi
+            if ! kill -0 "$mgba_pid" 2>/dev/null; then
+              wait_status=0
+              wait "$mgba_pid" || wait_status=$?
+              cat form-battle-mgba-v1.4.0-dev.1.log
+              if [[ "$wait_status" -eq 0 ]]; then
+                wait_status=1
+              fi
+              exit "$wait_status"
+            fi
+            sleep 0.1
+          done
+
+          if [[ "$complete" != true ]]; then
+            kill -INT "$mgba_pid" 2>/dev/null || true
+            wait "$mgba_pid" || true
+            cat form-battle-mgba-v1.4.0-dev.1.log
+            echo "mGBA form-battle report was not produced within 60 seconds"
+            exit 1
+          fi
+
+          kill -INT "$mgba_pid"
+          wait_status=0
+          wait "$mgba_pid" || wait_status=$?
+          cat form-battle-mgba-v1.4.0-dev.1.log
+          if [[ "$wait_status" -ne 0 ]]; then
+            exit "$wait_status"
+          fi
+
+          python3 scripts/validate_form_battle.py \
+            --raw-report mgba-form-battle/mgba_form_battle_raw.json \
+            --report form_battle_validation_v1.4.0-dev.1.json
+          sha256sum --check SHA256SUMS.txt
+
+      - name: Upload build and emulator diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-diagnostics-v1.4.0-dev.1
+          path: |
+            build-v1.4.0-dev.1.log
+            mgba-smoke-v1.4.0-dev.1.log
+            mgba-smoke/
+            quick-start-mgba-v1.4.0-dev.1.log
+            quick-start/
+            production-v1.4.0-dev.1.sym
+            quick_start_qa_validation_v1.4.0-dev.1.json
+            map-qa-build-v1.4.0-dev.1.log
+            map-qa-mgba-v1.4.0-dev.1.log
+            map-qa-v1.4.0-dev.1.sym
+            map-qa-game/pokeemerald_modern.gba
+            map-qa/
+            form-battle-build-v1.4.0-dev.1.log
+            form-battle-mgba-v1.4.0-dev.1.log
+            form-battle-v1.4.0-dev.1.sym
+            game/pokeemerald_modern.gba
+            mgba-build/mgba-headless
+            mgba-form-battle/
+            map_qa_instrumentation_v1.4.0-dev.1.json
+            map_qa_validation_v1.4.0-dev.1.json
+            form_battle_instrumentation_v1.4.0-dev.1.json
+            form_battle_validation_v1.4.0-dev.1.json
+            translation_sanitizer_v1.4.0-dev.1.json
+            translation_token_repair_v1.4.0-dev.1.json
+            manual_ptbr_fixes_v1.4.0-dev.1.json
+            display_quote_sanitizer_v1.4.0-dev.1.json
+            charmap_normalization_v1.4.0-dev.1.json
+            charmap_sanitizer_v1.4.0-dev.1.json
+            visual_audit_v1.4.0-dev.1.json
+            quick_start_v1.4.0-dev.1.json
+            map_art_v1.4.0-dev.1.json
+            map-previews-v1.4.0-dev.1/
+            form_import_v1.4.0-dev.1.json
+            rom_validation_v1.4.0-dev.1.json
+            mgba_smoke_validation_v1.4.0-dev.1.json
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Stop on mGBA smoke failure
+        if: steps.buildrom.outcome == 'success' && steps.mgba_smoke.outcome != 'success'
+        run: exit 1
+
+      - name: Stop on compact new-game flow failure
+        if: steps.buildrom.outcome == 'success' && steps.quick_start_qa.outcome != 'success'
+        run: exit 1
+
+      - name: Stop on map QA validation failure
+        if: >-
+          steps.buildrom.outcome == 'success' &&
+          (steps.map_qa_snapshot.outcome != 'success' ||
+           steps.map_qa_instrumentation.outcome != 'success' ||
+           steps.map_qa_build.outcome != 'success' ||
+           steps.map_qa_test.outcome != 'success' ||
+           steps.map_qa_restore.outcome != 'success')
+        run: exit 1
+
+      - name: Stop on battle-form validation failure
+        if: >-
+          steps.buildrom.outcome == 'success' &&
+          (steps.form_battle_instrumentation.outcome != 'success' ||
+           steps.form_battle_build.outcome != 'success' ||
+           steps.form_battle_test.outcome != 'success')
+        run: exit 1
+
+      - name: Upload playable ROM
+        uses: actions/upload-artifact@v4
+        with:
+          name: Emerald-PTBR-HGSS-v1.4.0-dev.1
+          path: |
+            Emerald_PTBR_HGSS_v1.4.0-dev.1.gba
+            SHA256SUMS.txt
+            overworld_import_v1.4.0-dev.1.json
+            quick_start_v1.4.0-dev.1.json
+            form_import_v1.4.0-dev.1.json
+            map_art_v1.4.0-dev.1.json
+            map-previews-v1.4.0-dev.1/
+            translation_consistency_v1.4.0-dev.1.json
+            translation_sanitizer_v1.4.0-dev.1.json
+            translation_token_repair_v1.4.0-dev.1.json
+            manual_ptbr_fixes_v1.4.0-dev.1.json
+            display_quote_sanitizer_v1.4.0-dev.1.json
+            charmap_normalization_v1.4.0-dev.1.json
+            charmap_sanitizer_v1.4.0-dev.1.json
+            visual_audit_v1.4.0-dev.1.json
+            rom_validation_v1.4.0-dev.1.json
+            mgba_smoke_validation_v1.4.0-dev.1.json
+            mgba-smoke/mgba_smoke_raw.json
+            quick_start_qa_validation_v1.4.0-dev.1.json
+            quick-start/mgba_quick_start_raw.json
+            quick-start/quick_start_*.png
+            map_qa_instrumentation_v1.4.0-dev.1.json
+            map_qa_validation_v1.4.0-dev.1.json
+            map-qa/mgba_map_qa_raw.json
+            map-qa/map_qa_*.png
+            form_battle_instrumentation_v1.4.0-dev.1.json
+            form_battle_validation_v1.4.0-dev.1.json
+            mgba-form-battle/mgba_form_battle_raw.json
+            V1.4_ROADMAP.md
+            QA_CHECKLIST_v1.4.md
+          if-no-files-found: error
+          retention-days: 30

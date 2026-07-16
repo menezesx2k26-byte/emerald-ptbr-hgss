@@ -5,6 +5,9 @@ import json
 import re
 from pathlib import Path
 
+from apply_battle_ptbr_fixes import apply_all as apply_battle_ptbr_fixes
+from release import release_tag, release_version
+
 REPLACEMENTS = {
     "ã": "ä",
     "õ": "ö",
@@ -99,6 +102,10 @@ def main() -> None:
     args = parser.parse_args()
     project = args.project.resolve()
 
+    # The battle pass runs immediately before charmap normalization so its
+    # reviewed PT-BR accents are encoded with the same rules as all other text.
+    battle_fixes = apply_battle_ptbr_fixes(project)
+
     files = sorted((project / "data/maps").rglob("scripts.inc"))
     files += sorted((project / "data/text").glob("*.inc"))
     files += sorted((project / "data/scripts").glob("*.inc"))
@@ -146,7 +153,9 @@ def main() -> None:
                 break
 
     report = {
-        "version": "1.3.1",
+        "version": release_version(),
+        "battle_ptbr_fixes": battle_fixes,
+        "battle_ptbr_fixes_applied": len(battle_fixes),
         "total_replacements": total,
         "files_changed": len(changed),
         "changes": changed,
@@ -155,9 +164,10 @@ def main() -> None:
         "rules": [
             "The Emerald PT-BR charmap represents ã/õ as ä/ö.",
             "All visible characters in encoded strings must exist in charmap.txt.",
+            "Battle UI is PT-BR while move names and descriptions remain English.",
         ],
     }
-    report_path = args.report or project / "charmap_normalization_v1.3.1.json"
+    report_path = args.report or project / f"charmap_normalization_{release_tag()}.json"
     report_path.write_text(
         json.dumps(report, indent=2, ensure_ascii=False) + "\n",
         encoding="utf-8",

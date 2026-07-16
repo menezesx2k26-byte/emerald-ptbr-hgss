@@ -1,10 +1,13 @@
 local output_dir = os.getenv("MGBA_SMOKE_OUTPUT") or "."
+local release_version = os.getenv("EMERALD_RELEASE_VERSION") or "1.3.1"
 local report_path = output_dir .. "/mgba_smoke_raw.json"
 local targets = {120, 600, 900}
 local samples = {}
 local captured = {}
 local finished = false
 local frame_callback = nil
+local pressed_a = false
+local release_a_frame = 0
 
 
 local function json_escape(value)
@@ -33,7 +36,7 @@ end
 local function write_report(status, crashed)
     local file = assert(io.open(report_path, "w"))
     file:write("{\n")
-    file:write(string.format('  "version": "1.3.1",\n'))
+    file:write(string.format('  "version": "%s",\n', json_escape(release_version)))
     file:write(string.format('  "status": "%s",\n', json_escape(status)))
     file:write(string.format('  "crashed": %s,\n', crashed and "true" or "false"))
     file:write(string.format('  "game_title": "%s",\n', json_escape(emu:getGameTitle())))
@@ -83,6 +86,11 @@ end)
 
 frame_callback = callbacks:add("frame", function()
     local frame = emu:currentFrame()
+    if pressed_a and release_a_frame ~= 0 and frame >= release_a_frame then
+        emu:clearKey(0) -- GBA_KEY_A
+        release_a_frame = 0
+    end
+
     for _, target in ipairs(targets) do
         if frame >= target and not captured[target] then
             local vram_nonzero, vram_signature = memory_sample(0x06000000, 0x06017FFE, 0x80)
@@ -100,6 +108,15 @@ frame_callback = callbacks:add("frame", function()
             })
             captured[target] = true
         end
+    end
+
+    -- The compact boot intentionally leaves a static main menu on screen.
+    -- Enter New Game after the middle sample so the final signature proves
+    -- that input and the first visible transition are both alive.
+    if frame >= targets[2] and not pressed_a then
+        emu:addKey(0) -- GBA_KEY_A
+        pressed_a = true
+        release_a_frame = frame + 2
     end
 
     if frame >= targets[#targets] then

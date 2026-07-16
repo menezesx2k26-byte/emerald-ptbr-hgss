@@ -7,6 +7,8 @@ import subprocess
 from collections import Counter
 from pathlib import Path
 
+from release import release_tag, release_version
+
 BLOCK_RE = re.compile(
     r"(?ms)^(?P<label>[A-Za-z_][A-Za-z0-9_]*::?\n)"
     r"(?P<body>(?:[ \t]*\.string[ \t]+\"(?:\\.|[^\"\\])*\"[ \t]*\n)+)"
@@ -193,7 +195,7 @@ def main() -> None:
     c_files = [path for path in c_files if path.exists()]
 
     report: dict[str, object] = {
-        "version": "1.3.1",
+        "version": release_version(),
         "control_repairs": 0,
         "reverted": {},
         "files_changed": [],
@@ -206,7 +208,7 @@ def main() -> None:
 
     problems = validate(project, assembly_files + c_files)
     report["validation_problems"] = problems
-    report_path = args.report or project / "translation_sanitizer_v1.3.1.json"
+    report_path = args.report or project / f"translation_sanitizer_{release_tag()}.json"
     report_path.write_text(json.dumps(report, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     print(json.dumps(report, indent=2, ensure_ascii=False))
     if problems:

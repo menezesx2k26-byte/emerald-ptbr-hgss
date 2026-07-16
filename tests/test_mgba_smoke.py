@@ -10,6 +10,7 @@ SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
 from validate_mgba_smoke import validate  # noqa: E402
+from release import release_version  # noqa: E402
 
 
 def raw_report(path: Path, *, static: bool = False, crashed: bool = False, sample_count: int = 3) -> None:
@@ -17,7 +18,7 @@ def raw_report(path: Path, *, static: bool = False, crashed: bool = False, sampl
     path.write_text(
         json.dumps(
             {
-                "version": "1.3.1",
+                "version": release_version(),
                 "status": "crashed" if crashed else "passed",
                 "crashed": crashed,
                 "game_title": "POKEMON EMER",

@@ -5,6 +5,8 @@ import hashlib
 import json
 from pathlib import Path
 
+from release import release_version
+
 
 NINTENDO_LOGO_SHA256 = "08a0153cfd6b0ea54b938f7d209933fa849da0d56f5a34c481060c9ff2fad818"
 EXPECTED_SIZE = 16 * 1024 * 1024
@@ -29,7 +31,7 @@ def validate(path: Path) -> dict[str, object]:
         "header_checksum_is_valid": calculated_checksum == stored_checksum,
     }
     return {
-        "version": "1.3.1",
+        "version": release_version(),
         "file": path.name,
         "size_bytes": len(data),
         "sha256": hashlib.sha256(data).hexdigest(),

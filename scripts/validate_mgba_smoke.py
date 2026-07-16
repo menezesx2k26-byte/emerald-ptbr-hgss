@@ -5,6 +5,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from release import release_version
+
 EXPECTED_TITLE = "POKEMON EMER"
 EXPECTED_GAME_CODE = "BPEE"
 EXPECTED_ROM_SIZE = 16 * 1024 * 1024
@@ -35,6 +37,7 @@ def validate(raw_report: Path) -> dict[str, Any]:
         )
 
     checks = {
+        "release_version_matches": raw.get("version") == release_version(),
         "emulator_reported_pass": raw.get("status") == "passed" and raw.get("crashed") is False,
         "gba_header_matches": (
             raw.get("game_title") == EXPECTED_TITLE
@@ -58,7 +61,7 @@ def validate(raw_report: Path) -> dict[str, Any]:
         "program_counter_valid": len(program_counters) == 3 and all(executable_address(pc) for pc in program_counters),
     }
     return {
-        "version": "1.3.1",
+        "version": release_version(),
         "valid": all(checks.values()),
         "checks": checks,
         "emulator": {
@@ -70,7 +73,7 @@ def validate(raw_report: Path) -> dict[str, Any]:
             "frame_samples": frame_samples,
         },
         "scope": (
-            "Automated headless boot and video-memory smoke test. Manual visual QA remains required for text, input flow, "
+            "Automated headless boot, New Game transition and video-memory smoke test. Manual visual QA remains required for text, input flow, "
             "collisions, battles, map transitions, Surf, Waterfall and Fly."
         ),
     }
