@@ -1,7 +1,10 @@
 local output_dir = os.getenv("MGBA_SMOKE_OUTPUT") or "."
 local release_version = os.getenv("EMERALD_RELEASE_VERSION") or "1.3.1"
 local report_path = output_dir .. "/mgba_smoke_raw.json"
-local targets = {120, 600, 900}
+-- Sample once during the direct-menu fade, then twice after it settles. The
+-- old 120/600/900 schedule correctly looked static after the cinematic was
+-- removed, because the main menu has no ambient animation.
+local targets = {5, 120, 900}
 local samples = {}
 local captured = {}
 local finished = false

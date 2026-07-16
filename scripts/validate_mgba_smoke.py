@@ -10,7 +10,7 @@ from release import release_version
 EXPECTED_TITLE = "POKEMON EMER"
 EXPECTED_GAME_CODE = "BPEE"
 EXPECTED_ROM_SIZE = 16 * 1024 * 1024
-EXPECTED_TARGET_FRAMES = (120, 600, 900)
+EXPECTED_TARGET_FRAMES = (5, 120, 900)
 
 
 def validate(raw_report: Path) -> dict[str, Any]:

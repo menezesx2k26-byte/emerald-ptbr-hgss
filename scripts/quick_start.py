@@ -6,9 +6,35 @@ from pathlib import Path
 from release import release_tag, release_version
 
 
-MAIN_INCLUDE_MARKER = '#include "main_menu.h" /* V14_QUICK_START */'
-MAIN_BOOT_OLD = "    SetMainCallback2(CB2_InitCopyrightScreenAfterBootup);"
-MAIN_BOOT_NEW = "    SetMainCallback2(CB2_InitMainMenu); /* V14_QUICK_START */"
+INTRO_INCLUDE_MARKER = '#include "main_menu.h" /* V14_QUICK_START */'
+INTRO_BOOT_OLD = """void CB2_InitCopyrightScreenAfterBootup(void)
+{
+    if (!SetUpCopyrightScreen())
+    {
+        SetSaveBlocksPointers(GetSaveBlocksPointersBaseOffset());
+        ResetMenuAndMonGlobals();
+        Save_ResetSaveCounters();
+        LoadGameSave(SAVE_NORMAL);
+        if (gSaveFileStatus == SAVE_STATUS_EMPTY || gSaveFileStatus == SAVE_STATUS_CORRUPT)
+            Sav2_ClearSetDefault();
+        SetPokemonCryStereo(gSaveBlock2Ptr->optionsSound);
+        InitHeap(gHeap, HEAP_SIZE);
+    }
+}"""
+INTRO_BOOT_NEW = """void CB2_InitCopyrightScreenAfterBootup(void)
+{
+    /* V14_QUICK_START: keep boot/save initialization, skip only presentation screens. */
+    SetSaveBlocksPointers(GetSaveBlocksPointersBaseOffset());
+    ResetMenuAndMonGlobals();
+    Save_ResetSaveCounters();
+    LoadGameSave(SAVE_NORMAL);
+    if (gSaveFileStatus == SAVE_STATUS_EMPTY || gSaveFileStatus == SAVE_STATUS_CORRUPT)
+        Sav2_ClearSetDefault();
+    SetPokemonCryStereo(gSaveBlock2Ptr->optionsSound);
+    InitHeap(gHeap, HEAP_SIZE);
+    SetSerialCallback(SerialCB);
+    SetMainCallback2(CB2_InitMainMenu); /* V14_QUICK_START */
+}"""
 
 BIRCH_TAIL_OLD = """    AddBirchSpeechObjects(taskId);
     BeginNormalPaletteFade(PALETTES_ALL, 0, 16, 0, RGB_BLACK);
@@ -69,16 +95,16 @@ def _replace_once(text: str, old: str, new: str, label: str) -> str:
     return text.replace(old, new, 1)
 
 
-def patch_main(text: str) -> str:
-    if MAIN_BOOT_NEW in text:
+def patch_intro(text: str) -> str:
+    if INTRO_BOOT_NEW in text:
         return text
     text = _replace_once(
         text,
         '#include "main.h"',
-        '#include "main.h"\n' + MAIN_INCLUDE_MARKER,
-        "main menu include",
+        '#include "main.h"\n' + INTRO_INCLUDE_MARKER,
+        "intro main menu include",
     )
-    return _replace_once(text, MAIN_BOOT_OLD, MAIN_BOOT_NEW, "boot callback")
+    return _replace_once(text, INTRO_BOOT_OLD, INTRO_BOOT_NEW, "boot callback")
 
 
 def patch_main_menu(text: str) -> str:
@@ -89,9 +115,9 @@ def patch_main_menu(text: str) -> str:
 
 
 def apply_quick_start(project: Path) -> dict[str, object]:
-    main_path = project / "src/main.c"
+    intro_path = project / "src/intro.c"
     main_menu_path = project / "src/main_menu.c"
-    main_path.write_text(patch_main(main_path.read_text(encoding="utf-8")), encoding="utf-8")
+    intro_path.write_text(patch_intro(intro_path.read_text(encoding="utf-8")), encoding="utf-8")
     main_menu_path.write_text(
         patch_main_menu(main_menu_path.read_text(encoding="utf-8")),
         encoding="utf-8",

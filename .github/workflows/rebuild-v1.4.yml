@@ -160,7 +160,8 @@ jobs:
             --sprites-root pokeapi-sprites/sprites/pokemon/versions/generation-iv/heartgold-soulsilver \
             --overworlds-root "team-aqua-assets/Overworld Trainer Sprites/RavePossum/Poffin-Case-Overworlds-Converted"
           test -f game/quick_start_v1.4.0-dev.1.json
-          grep -q 'SetMainCallback2(CB2_InitMainMenu); /\* V14_QUICK_START \*/' game/src/main.c
+          grep -q 'SetMainCallback2(CB2_InitMainMenu); /\* V14_QUICK_START \*/' game/src/intro.c
+          grep -q 'SetSaveBlocksPointers(GetSaveBlocksPointersBaseOffset());' game/src/intro.c
           grep -q 'Task_NewGameBirchSpeech_BoyOrGirl; /\* V14_QUICK_START \*/' game/src/main_menu.c
 
       - name: Audit imported visual assets
