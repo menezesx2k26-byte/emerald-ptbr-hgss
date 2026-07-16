@@ -1,0 +1,78 @@
+name: Build PokeMMO HGSS Visual Mod
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/build-pokemmo-mod.yml"
+      - "scripts/build_pokemmo_mod.py"
+      - "scripts/sprites.py"
+      - "scripts/common.py"
+      - "tests/test_pokemmo_mod.py"
+      - "POKEMMO_MOD.md"
+      - "README.md"
+
+permissions:
+  contents: read
+
+env:
+  EMERALD_RELEASE_VERSION: 1.4.0-dev.1
+  POKEMMO_MOD_VERSION: 0.1.0
+  BASE_REPOSITORY: https://github.com/lucmsilva651/esmeralda-ptbr.git
+  BASE_SHA: 16899178c5d9b198b961c3e38389ccccbdff7836
+  POKEAPI_SPRITES_SHA: bf4c47ac82c33b330e33d98b8882d1cedb2f53e7
+
+jobs:
+  build:
+    name: Build and validate .mod
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout integration scripts
+        uses: actions/checkout@v4
+
+      - name: Install image dependency
+        run: python3 -m pip install pillow
+
+      - name: Run tests
+        run: |
+          python3 -m unittest discover -s tests -v
+          python3 -m compileall -q scripts tests
+
+      - name: Checkout pinned Emerald source
+        run: |
+          git clone --filter=blob:none --no-checkout "$BASE_REPOSITORY" game
+          git -C game checkout --detach "$BASE_SHA"
+          test "$(git -C game rev-parse HEAD)" = "$BASE_SHA"
+
+      - name: Checkout pinned HGSS sprites
+        run: |
+          git clone --filter=blob:none --no-checkout \
+            https://github.com/PokeAPI/sprites.git pokeapi-sprites
+          git -C pokeapi-sprites sparse-checkout init --cone
+          git -C pokeapi-sprites sparse-checkout set \
+            sprites/pokemon/versions/generation-iv/heartgold-soulsilver
+          git -C pokeapi-sprites checkout --detach "$POKEAPI_SPRITES_SHA"
+          test "$(git -C pokeapi-sprites rev-parse HEAD)" = "$POKEAPI_SPRITES_SHA"
+
+      - name: Build PokeMMO mod
+        run: |
+          mkdir -p dist
+          python3 scripts/build_pokemmo_mod.py \
+            --project game \
+            --sprites-root pokeapi-sprites/sprites/pokemon/versions/generation-iv/heartgold-soulsilver \
+            --version "$POKEMMO_MOD_VERSION" \
+            --output "dist/Emerald-HGSS-Visual-386-v${POKEMMO_MOD_VERSION}.mod" \
+            --report "dist/Emerald-HGSS-Visual-386-v${POKEMMO_MOD_VERSION}.validation.json"
+          test "$(unzip -Z1 "dist/Emerald-HGSS-Visual-386-v${POKEMMO_MOD_VERSION}.mod" | grep -c '^sprites/battlesprites/.*\.gif$')" -eq 1544
+          unzip -t "dist/Emerald-HGSS-Visual-386-v${POKEMMO_MOD_VERSION}.mod"
+          sha256sum dist/* | tee dist/SHA256SUMS.txt
+
+      - name: Upload PokeMMO mod
+        uses: actions/upload-artifact@v4
+        with:
+          name: Emerald-HGSS-Visual-386-v0.1.0
+          path: dist/
+          if-no-files-found: error
+          retention-days: 30

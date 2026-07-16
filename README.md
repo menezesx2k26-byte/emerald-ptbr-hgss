@@ -3,6 +3,13 @@
 Overhaul de Pokémon Emerald com localização em português brasileiro e uma
 direção visual inspirada em HeartGold/SoulSilver.
 
+## Mod visual para PokeMMO
+
+A identidade de batalha da v1.4 também pode ser gerada como um pacote separado
+e compatível com o gerenciador de mods do PokeMMO: 386 Pokémon, frente/costas,
+normal/shiny e a animação ociosa sutil. O pacote não contém ROM. Escopo,
+limitações e instalação estão em [`POKEMMO_MOD.md`](POKEMMO_MOD.md).
+
 ## v1.4 em desenvolvimento
 
 A v1.4 começou pela remoção dos segundos quadros estáticos de batalha. As
