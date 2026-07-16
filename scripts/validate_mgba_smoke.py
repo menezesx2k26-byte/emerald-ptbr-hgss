@@ -10,7 +10,7 @@ from release import release_version
 EXPECTED_TITLE = "POKEMON EMER"
 EXPECTED_GAME_CODE = "BPEE"
 EXPECTED_ROM_SIZE = 16 * 1024 * 1024
-EXPECTED_TARGET_FRAMES = (5, 120, 900)
+EXPECTED_TARGET_FRAMES = (120, 600, 900)
 
 
 def validate(raw_report: Path) -> dict[str, Any]:
@@ -73,7 +73,7 @@ def validate(raw_report: Path) -> dict[str, Any]:
             "frame_samples": frame_samples,
         },
         "scope": (
-            "Automated headless boot and video-memory smoke test. Manual visual QA remains required for text, input flow, "
+            "Automated headless boot, New Game transition and video-memory smoke test. Manual visual QA remains required for text, input flow, "
             "collisions, battles, map transitions, Surf, Waterfall and Fly."
         ),
     }

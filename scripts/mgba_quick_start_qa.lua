@@ -192,7 +192,7 @@ frame_callback = callbacks:add("frame", function()
     then
         if state_frame == 0 then
             state_frame = frame
-        elseif frame - state_frame >= 180 then
+        elseif frame - state_frame >= 600 then
             capture("littleroot_start")
             local header_ok = emu:getGameTitle() == "POKEMON EMER"
                 and emu:getGameCode() == "BPEE"

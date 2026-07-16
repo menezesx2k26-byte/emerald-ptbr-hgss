@@ -37,7 +37,7 @@ def raw_report(path: Path, *, static: bool = False, crashed: bool = False, sampl
                         "oam_signature": signatures[index] + 2,
                         "pc": 0x08000100,
                     }
-                    for index, frame in enumerate((5, 120, 900)[:sample_count])
+                    for index, frame in enumerate((120, 600, 900)[:sample_count])
                 ],
             }
         ),
