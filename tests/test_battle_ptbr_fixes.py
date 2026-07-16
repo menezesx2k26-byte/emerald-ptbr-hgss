@@ -15,9 +15,10 @@ from apply_battle_ptbr_fixes import (  # noqa: E402
     ROUTE101_FIXES,
     STARTER_CATEGORY_FIXES,
     CFix,
+    CategoryFix,
     apply_all,
     apply_c_fix,
-    placeholder_multiset,
+    apply_category_fix,
 )
 
 
@@ -80,14 +81,13 @@ class BattlePtbrFixTests(unittest.TestCase):
             self.assertIn("A-ajude-me!", route)
             self.assertIn("PROF. BIRCH: Ufa...", route)
             self.assertIn('.categoryName = _("PINTINHO")', categories)
-            self.assertIn('.categoryName = _("PEIXE DE LAMA")', categories)
+            self.assertIn('.categoryName = _("PEIXE-LAMA")', categories)
 
-    def test_all_replacements_preserve_control_placeholders(self) -> None:
-        for fix in BATTLE_C_FIXES:
-            self.assertEqual(placeholder_multiset(fix.text), placeholder_multiset(fix.text))
+    def test_route_blocks_terminate_and_categories_fit_rom_field(self) -> None:
         for fix in ROUTE101_FIXES:
-            raw = "".join(fix.lines)
-            self.assertTrue(raw.endswith("$"), fix.label)
+            self.assertTrue("".join(fix.lines).endswith("$"), fix.label)
+        for fix in STARTER_CATEGORY_FIXES:
+            self.assertLessEqual(len(fix.category), 11, fix.species)
 
     def test_rejects_placeholder_loss(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -100,6 +100,18 @@ class BattlePtbrFixTests(unittest.TestCase):
             )
             with self.assertRaisesRegex(RuntimeError, "Placeholder mismatch"):
                 apply_c_fix(project, CFix("src/battle_message.c", "sText_Test", "Golpe usado!"))
+
+    def test_rejects_oversized_pokedex_category(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            project = Path(directory)
+            path = project / "src/data/pokemon/pokedex_entries.h"
+            path.parent.mkdir(parents=True)
+            path.write_text(
+                '[NATIONAL_DEX_TEST] =\n{\n    .categoryName = _("TEST"),\n},\n',
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(ValueError, "Category too long"):
+                apply_category_fix(project, CategoryFix("NATIONAL_DEX_TEST", "CATEGORIA LONGA"))
 
     def test_move_names_and_descriptions_are_not_touched(self) -> None:
         touched = {fix.path for fix in BATTLE_C_FIXES}
