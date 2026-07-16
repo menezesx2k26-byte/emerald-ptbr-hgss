@@ -16,6 +16,7 @@ from quick_start import (  # noqa: E402
     patch_main,
     patch_main_menu,
 )
+from release import release_tag  # noqa: E402
 
 
 MAIN_FIXTURE = '''#include "intro.h"
@@ -62,7 +63,7 @@ class QuickStartTests(unittest.TestCase):
             self.assertEqual(first_main, (project / "src/main.c").read_text(encoding="utf-8"))
             self.assertEqual(first_menu, (project / "src/main_menu.c").read_text(encoding="utf-8"))
             self.assertIn("gender and player-name selection", report["new_game_flow"])
-            self.assertTrue((project / "quick_start_v1.3.1.json").exists())
+            self.assertTrue((project / f"quick_start_{release_tag()}.json").exists())
 
 
 if __name__ == "__main__":
