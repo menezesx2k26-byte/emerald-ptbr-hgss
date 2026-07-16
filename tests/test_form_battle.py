@@ -169,6 +169,22 @@ class FormBattleInstrumentationTests(unittest.TestCase):
             self.assertIn("if (!gFormBattleTestOwnsBattle)\n        RunTasks();", battle_text)
             self.assertEqual(len(report["cases"]), 9)
 
+    def test_instruments_the_v14_quick_start_callback(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "src").mkdir()
+            main = MAIN_FIXTURE.replace(
+                "SetMainCallback2(CB2_InitCopyrightScreenAfterBootup);",
+                "SetMainCallback2(CB2_InitMainMenu); /* V14_QUICK_START */",
+            )
+            (root / "src/main.c").write_text(main, encoding="utf-8")
+            (root / "src/battle_main.c").write_text(BATTLE_FIXTURE, encoding="utf-8")
+            instrument_project(root)
+            self.assertIn(
+                "SetMainCallback2(CB2_FormBattleTestInit);",
+                (root / "src/main.c").read_text(encoding="utf-8"),
+            )
+
     def test_refuses_to_instrument_twice(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

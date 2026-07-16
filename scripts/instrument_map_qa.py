@@ -119,6 +119,17 @@ def replace_once(text: str, old: str, new: str, label: str) -> str:
     return text.replace(old, new, 1)
 
 
+def replace_boot_callback(text: str, callback: str) -> str:
+    anchors = (
+        "    SetMainCallback2(CB2_InitMainMenu); /* V14_QUICK_START */",
+        "    SetMainCallback2(CB2_InitCopyrightScreenAfterBootup);",
+    )
+    matches = [anchor for anchor in anchors if anchor in text]
+    if len(matches) != 1:
+        raise ValueError(f"Expected exactly one boot callback anchor, found {len(matches)}")
+    return text.replace(matches[0], f"    SetMainCallback2({callback});", 1)
+
+
 def instrument_main(text: str) -> str:
     if MAIN_MARKER in text:
         raise ValueError("src/main.c is already instrumented for map QA")
@@ -128,12 +139,7 @@ def instrument_main(text: str) -> str:
         MAIN_DECLARATION + "static void InitMainCallbacks(void);",
         "main declaration",
     )
-    text = replace_once(
-        text,
-        "    SetMainCallback2(CB2_InitCopyrightScreenAfterBootup);",
-        "    SetMainCallback2(CB2_MapQaInit);",
-        "boot callback",
-    )
+    text = replace_boot_callback(text, "CB2_MapQaInit")
     text = replace_once(
         text,
         "    gSaveBlock2Ptr = &gSaveblock2.block;",

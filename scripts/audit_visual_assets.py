@@ -331,11 +331,70 @@ def audit_overworlds(project: Path) -> dict[str, object]:
     if not report_path.exists():
         return {"valid": False, "problem": f"missing: {report_path}"}
     report = json.loads(report_path.read_text(encoding="utf-8"))
+    redesign = report.get("player_redesign")
+    redesign_problems: list[str] = []
+    if not isinstance(redesign, dict):
+        redesign_problems.append("missing player redesign report")
+        redesign = {}
+    records = redesign.get("records")
+    if not isinstance(records, list):
+        redesign_problems.append("missing player redesign records")
+        records = []
+    expected = {
+        f"{player}/{action}"
+        for player in ("brendan", "may")
+        for action in (
+            "acro_bike.png",
+            "decorating.png",
+            "field_move.png",
+            "fishing.png",
+            "mach_bike.png",
+            "running.png",
+            "surfing.png",
+            "underwater.png",
+            "walking.png",
+            "watering.png",
+        )
+    }
+    found: set[str] = set()
+    walking_changes: dict[str, int] = {}
+    for record in records:
+        if not isinstance(record, dict) or not isinstance(record.get("path"), str):
+            redesign_problems.append("invalid player redesign record")
+            continue
+        relative = str(record["path"])
+        found.add(relative)
+        path = project / "graphics/object_events/pics/people" / relative
+        if not path.exists():
+            redesign_problems.append(f"missing redesigned player asset: {relative}")
+            continue
+        if record.get("output_sha256") != file_sha256(path):
+            redesign_problems.append(f"stale redesigned player hash: {relative}")
+        try:
+            with Image.open(path) as image:
+                colors = image.getcolors(maxcolors=17)
+                if image.mode != "P" or colors is None or len(colors) > 16:
+                    redesign_problems.append(f"invalid indexed player asset: {relative}")
+        except OSError as error:
+            redesign_problems.append(f"invalid player asset {relative}: {error}")
+        if relative.endswith("/walking.png"):
+            walking_changes[str(record.get("player"))] = int(record.get("changed_pixels", 0))
+    if found != expected:
+        redesign_problems.append("player redesign action coverage is incomplete")
+    if redesign.get("files_checked") != 20:
+        redesign_problems.append("player redesign did not check 20 action sheets")
+    if redesign.get("files_changed") != 18:
+        redesign_problems.append("player redesign did not change all 18 visible clothing sheets")
+    if int(redesign.get("total_changed_pixels", 0)) < 1000:
+        redesign_problems.append("player redesign changed too few pixels")
+    if walking_changes.get("brendan", 0) < 100 or walking_changes.get("may", 0) < 100:
+        redesign_problems.append("player walking redesign is too subtle")
     valid = (
         report.get("copied_count") == 129
         and report.get("skipped_missing_destination_count") == 0
         and report.get("skipped_dimension_mismatch_count") == 0
         and report.get("fly_animation_alignment_patched") is True
+        and not redesign_problems
     )
     return {
         "valid": valid,
@@ -344,6 +403,11 @@ def audit_overworlds(project: Path) -> dict[str, object]:
         "skipped_dimension_mismatch_count": report.get("skipped_dimension_mismatch_count"),
         "fly_animation_alignment_patched": report.get("fly_animation_alignment_patched"),
         "palette_strategy": report.get("palette_strategy"),
+        "player_redesign_files_checked": redesign.get("files_checked"),
+        "player_redesign_files_changed": redesign.get("files_changed"),
+        "player_redesign_total_changed_pixels": redesign.get("total_changed_pixels"),
+        "player_walking_changed_pixels": walking_changes,
+        "player_redesign_problems": redesign_problems,
     }
 
 

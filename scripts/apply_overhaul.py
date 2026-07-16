@@ -6,6 +6,7 @@ from pathlib import Path
 
 from maps import apply_map_overhaul
 from overworlds import import_overworld_sprites
+from quick_start import apply_quick_start
 from release import release_version
 from sprites import import_hgss_sprites
 from water import apply_water_overhaul
@@ -26,6 +27,7 @@ def main() -> None:
     apply_map_overhaul(project)
     import_hgss_sprites(project, args.sprites_root.resolve())
     import_overworld_sprites(project, args.overworlds_root.resolve())
+    apply_quick_start(project)
     print(f"Visual overhaul v{release_version()} applied successfully")
 
 

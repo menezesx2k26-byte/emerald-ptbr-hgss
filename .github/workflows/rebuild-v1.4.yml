@@ -159,6 +159,9 @@ jobs:
             --project game \
             --sprites-root pokeapi-sprites/sprites/pokemon/versions/generation-iv/heartgold-soulsilver \
             --overworlds-root "team-aqua-assets/Overworld Trainer Sprites/RavePossum/Poffin-Case-Overworlds-Converted"
+          test -f game/quick_start_v1.4.0-dev.1.json
+          grep -q 'SetMainCallback2(CB2_InitMainMenu); /\* V14_QUICK_START \*/' game/src/main.c
+          grep -q 'Task_NewGameBirchSpeech_BoyOrGirl; /\* V14_QUICK_START \*/' game/src/main_menu.c
 
       - name: Audit imported visual assets
         run: |
@@ -235,7 +238,13 @@ jobs:
           python3 scripts/validate_rom.py \
             --rom Emerald_PTBR_HGSS_v1.4.0-dev.1.gba \
             --report rom_validation_v1.4.0-dev.1.json
+          arm-none-eabi-nm -n game/pokeemerald_modern.elf \
+            > production-v1.4.0-dev.1.sym
+          test "$(grep -c ' CB2_MainMenu$' production-v1.4.0-dev.1.sym)" -eq 1
+          test "$(grep -c ' Task_NewGameBirchSpeech_ChooseGender$' production-v1.4.0-dev.1.sym)" -eq 1
+          test "$(grep -c ' CB2_NamingScreen$' production-v1.4.0-dev.1.sym)" -eq 1
           cp game/overworld_import_v1.4.0-dev.1.json .
+          cp game/quick_start_v1.4.0-dev.1.json .
           cp game/form_import_v1.4.0-dev.1.json .
           cp game/map_art_v1.4.0-dev.1.json .
           cp -R game/map-previews-v1.4.0-dev.1 .
@@ -319,6 +328,61 @@ jobs:
           python3 scripts/validate_mgba_smoke.py \
             --raw-report mgba-smoke/mgba_smoke_raw.json \
             --report mgba_smoke_validation_v1.4.0-dev.1.json
+
+      - name: Exercise the compact new-game flow in the production ROM
+        id: quick_start_qa
+        if: steps.buildrom.outcome == 'success'
+        continue-on-error: true
+        env:
+          MGBA_QUICK_START_OUTPUT: ${{ github.workspace }}/quick-start
+          MGBA_QUICK_START_SYMBOLS: ${{ github.workspace }}/production-v1.4.0-dev.1.sym
+        run: |
+          mkdir -p "$MGBA_QUICK_START_OUTPUT"
+          mgba-build/mgba-headless \
+            --script "$GITHUB_WORKSPACE/scripts/mgba_quick_start_qa.lua" \
+            "$GITHUB_WORKSPACE/Emerald_PTBR_HGSS_v1.4.0-dev.1.gba" \
+            >quick-start-mgba-v1.4.0-dev.1.log 2>&1 &
+          mgba_pid=$!
+
+          complete=false
+          for _ in $(seq 1 600); do
+            if [[ -s "$MGBA_QUICK_START_OUTPUT/mgba_quick_start_raw.json" ]]; then
+              complete=true
+              break
+            fi
+            if ! kill -0 "$mgba_pid" 2>/dev/null; then
+              wait_status=0
+              wait "$mgba_pid" || wait_status=$?
+              cat quick-start-mgba-v1.4.0-dev.1.log
+              if [[ "$wait_status" -eq 0 ]]; then
+                wait_status=1
+              fi
+              exit "$wait_status"
+            fi
+            sleep 0.1
+          done
+
+          if [[ "$complete" != true ]]; then
+            kill -INT "$mgba_pid" 2>/dev/null || true
+            wait "$mgba_pid" || true
+            cat quick-start-mgba-v1.4.0-dev.1.log
+            echo "Quick-start mGBA report was not produced within 60 seconds"
+            exit 1
+          fi
+
+          kill -INT "$mgba_pid"
+          wait_status=0
+          wait "$mgba_pid" || wait_status=$?
+          cat quick-start-mgba-v1.4.0-dev.1.log
+          if [[ "$wait_status" -ne 0 ]]; then
+            exit "$wait_status"
+          fi
+
+          python3 scripts/validate_quick_start_qa.py \
+            --raw-report quick-start/mgba_quick_start_raw.json \
+            --screenshots quick-start \
+            --report quick_start_qa_validation_v1.4.0-dev.1.json
+          sha256sum --check SHA256SUMS.txt
 
       - name: Snapshot clean sources for the map QA ROM
         id: map_qa_snapshot
@@ -518,6 +582,10 @@ jobs:
             build-v1.4.0-dev.1.log
             mgba-smoke-v1.4.0-dev.1.log
             mgba-smoke/
+            quick-start-mgba-v1.4.0-dev.1.log
+            quick-start/
+            production-v1.4.0-dev.1.sym
+            quick_start_qa_validation_v1.4.0-dev.1.json
             map-qa-build-v1.4.0-dev.1.log
             map-qa-mgba-v1.4.0-dev.1.log
             map-qa-v1.4.0-dev.1.sym
@@ -540,6 +608,7 @@ jobs:
             charmap_normalization_v1.4.0-dev.1.json
             charmap_sanitizer_v1.4.0-dev.1.json
             visual_audit_v1.4.0-dev.1.json
+            quick_start_v1.4.0-dev.1.json
             map_art_v1.4.0-dev.1.json
             map-previews-v1.4.0-dev.1/
             form_import_v1.4.0-dev.1.json
@@ -550,6 +619,10 @@ jobs:
 
       - name: Stop on mGBA smoke failure
         if: steps.buildrom.outcome == 'success' && steps.mgba_smoke.outcome != 'success'
+        run: exit 1
+
+      - name: Stop on compact new-game flow failure
+        if: steps.buildrom.outcome == 'success' && steps.quick_start_qa.outcome != 'success'
         run: exit 1
 
       - name: Stop on map QA validation failure
@@ -578,6 +651,7 @@ jobs:
             Emerald_PTBR_HGSS_v1.4.0-dev.1.gba
             SHA256SUMS.txt
             overworld_import_v1.4.0-dev.1.json
+            quick_start_v1.4.0-dev.1.json
             form_import_v1.4.0-dev.1.json
             map_art_v1.4.0-dev.1.json
             map-previews-v1.4.0-dev.1/
@@ -592,6 +666,9 @@ jobs:
             rom_validation_v1.4.0-dev.1.json
             mgba_smoke_validation_v1.4.0-dev.1.json
             mgba-smoke/mgba_smoke_raw.json
+            quick_start_qa_validation_v1.4.0-dev.1.json
+            quick-start/mgba_quick_start_raw.json
+            quick-start/quick_start_*.png
             map_qa_instrumentation_v1.4.0-dev.1.json
             map_qa_validation_v1.4.0-dev.1.json
             map-qa/mgba_map_qa_raw.json

@@ -7,7 +7,7 @@ de gameplay é aprovado apenas porque a ROM compilou.
 
 ### Build e integridade
 
-- [ ] 33 testes automatizados aprovados;
+- [ ] suíte automatizada integral aprovada;
 - [ ] auditoria visual integral aprovada;
 - [ ] ROM de produção com 16 MiB, cabeçalho e checksum válidos;
 - [ ] smoke test normal de 900 frames aprovado;
@@ -31,12 +31,19 @@ de gameplay é aprovado apenas porque a ROM compilou.
 - [ ] Castform e Unown continuam aprovados nos nove casos front/back;
 - [ ] 386 espécies-base e 30 formas alternativas continuam válidas;
 - [ ] 129 overworlds humanos continuam válidos;
+- [ ] 20 folhas jogáveis de Brendan/May auditadas e 18 uniformes visivelmente
+  redesenhados;
 - [ ] 16 assets de água e efeitos continuam válidos;
 - [ ] diálogos, menus e mensagens permanecem em PT-BR;
 - [ ] nomes e descrições de golpes permanecem em inglês.
 
 ## P1 — passagem humana na ROM de produção
 
+- [ ] ligar a ROM e chegar diretamente ao menu, sem logos/cinemática/título;
+- [ ] iniciar Novo Jogo e ver somente gênero e nome antes de Littleroot;
+- [ ] conferir Brendan e May redesenhados ao caminhar e correr;
+- [ ] conferir bike, pesca, Surf, field move, regador e decoração com o uniforme
+  novo;
 - [ ] iniciar um jogo novo e chegar a Littleroot sem travamento;
 - [ ] testar D-pad, A, B, Start e abertura/fechamento de menus;
 - [ ] caminhar ao redor das duas casas e do laboratório de Littleroot;
@@ -51,6 +58,9 @@ de gameplay é aprovado apenas porque a ROM compilou.
 ## Evidências esperadas
 
 - `visual_audit_v1.4.0-dev.1.json`;
+- `quick_start_v1.4.0-dev.1.json`;
+- `quick_start_qa_validation_v1.4.0-dev.1.json` e cinco screenshots da ROM
+  de produção;
 - `map_art_v1.4.0-dev.1.json`;
 - `map_qa_validation_v1.4.0-dev.1.json`;
 - quatro previews completos e quatro screenshots reais do mGBA;
