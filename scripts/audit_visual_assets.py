@@ -389,6 +389,18 @@ def audit_overworlds(project: Path) -> dict[str, object]:
         redesign_problems.append("player redesign changed too few pixels")
     if walking_changes.get("brendan", 0) < 100 or walking_changes.get("may", 0) < 100:
         redesign_problems.append("player walking redesign is too subtle")
+    runtime_palettes = redesign.get("runtime_palettes")
+    if not isinstance(runtime_palettes, dict) or runtime_palettes.get("files_changed") != 2:
+        redesign_problems.append("Brendan runtime/reflection palettes were not both redesigned")
+    brendan_palette = project / "graphics/object_events/palettes/brendan.pal"
+    if brendan_palette.exists():
+        palette_text = brendan_palette.read_text(encoding="utf-8")
+        if "255 197 49" not in palette_text or "213 139 32" not in palette_text:
+            redesign_problems.append("Brendan runtime palette is missing the v1.4 gold shades")
+        if "74 148 82" in palette_text or "115 205 115" in palette_text:
+            redesign_problems.append("Brendan runtime palette still contains the legacy green uniform")
+    else:
+        redesign_problems.append("missing Brendan runtime palette")
     valid = (
         report.get("copied_count") == 129
         and report.get("skipped_missing_destination_count") == 0
@@ -406,6 +418,7 @@ def audit_overworlds(project: Path) -> dict[str, object]:
         "player_redesign_files_checked": redesign.get("files_checked"),
         "player_redesign_files_changed": redesign.get("files_changed"),
         "player_redesign_total_changed_pixels": redesign.get("total_changed_pixels"),
+        "player_runtime_palettes_changed": runtime_palettes.get("files_changed") if isinstance(runtime_palettes, dict) else None,
         "player_walking_changed_pixels": walking_changes,
         "player_redesign_problems": redesign_problems,
     }

@@ -64,6 +64,76 @@ def _pixel_data(image: Image.Image) -> list[int]:
     return list(image.getdata())
 
 
+def _read_jasc_palette(path: Path) -> list[tuple[int, int, int]]:
+    lines = path.read_text(encoding="utf-8").splitlines()
+    if lines[:3] != ["JASC-PAL", "0100", "16"] or len(lines) != 19:
+        raise ValueError(f"Unsupported player palette: {path}")
+    colors = [tuple(map(int, line.split())) for line in lines[3:]]
+    if any(len(color) != 3 or any(channel < 0 or channel > 255 for channel in color) for color in colors):
+        raise ValueError(f"Invalid player palette color: {path}")
+    return colors
+
+
+def _write_jasc_palette(path: Path, colors: list[tuple[int, int, int]]) -> None:
+    if len(colors) != 16:
+        raise ValueError(f"Player palette must contain 16 colors: {path}")
+    body = "\n".join(" ".join(map(str, color)) for color in colors)
+    path.write_text(f"JASC-PAL\n0100\n16\n{body}\n", encoding="utf-8")
+
+
+def _redesign_brendan_runtime_palettes(palette_root: Path) -> dict[str, object]:
+    main_path = palette_root / "brendan.pal"
+    reflection_path = palette_root / "brendan_reflection.pal"
+    main = _read_jasc_palette(main_path)
+    reflection = _read_jasc_palette(reflection_path)
+    main_before = main.copy()
+    reflection_before = reflection.copy()
+    before_hashes = {path.name: _sha256(path) for path in (main_path, reflection_path)}
+
+    white = _find_palette_index(main, ((255, 255, 255),))
+    gray = _find_palette_index(main, ((222, 230, 238),))
+    green_dark = _find_palette_index(main, ((74, 148, 82),))
+    green_light = _find_palette_index(main, ((115, 205, 115),))
+    red_dark = _find_palette_index(main, ((123, 65, 65),))
+    uniform_red = _find_palette_index(main, ((197, 65, 65),))
+
+    main[white] = (255, 197, 49)
+    main[gray] = (213, 139, 32)
+    main[green_dark] = (255, 255, 255)
+    main[green_light] = (222, 230, 238)
+    main[red_dark] = (197, 65, 65)
+
+    # Reflections use a dedicated, lighter palette. Reuse its existing white,
+    # gray and uniform-red tones, and add two water-tinted gold shades.
+    reflection[white] = (255, 213, 115)
+    reflection[gray] = (230, 180, 90)
+    reflection[green_dark] = reflection_before[white]
+    reflection[green_light] = reflection_before[gray]
+    reflection[red_dark] = reflection_before[uniform_red]
+
+    _write_jasc_palette(main_path, main)
+    _write_jasc_palette(reflection_path, reflection)
+    records = []
+    for path, before, after in (
+        (main_path, main_before, main),
+        (reflection_path, reflection_before, reflection),
+    ):
+        records.append(
+            {
+                "path": path.name,
+                "changed_entries": sum(left != right for left, right in zip(before, after)),
+                "source_sha256": before_hashes[path.name],
+                "output_sha256": _sha256(path),
+            }
+        )
+    return {
+        "policy": "The runtime object palette and water reflection match Brendan's gold/red v1.4 PNG indices.",
+        "files_checked": 2,
+        "files_changed": sum(record["source_sha256"] != record["output_sha256"] for record in records),
+        "records": records,
+    }
+
+
 def _redesign_brendan(image: Image.Image) -> int:
     colors = _palette_colors(image)
     white = _find_palette_index(colors, ((255, 255, 255), (255, 253, 253)))
@@ -129,7 +199,7 @@ def _redesign_may(image: Image.Image) -> int:
     return sum(left != right for left, right in zip(source, output))
 
 
-def apply_player_redesign(destination_root: Path) -> dict[str, object]:
+def apply_player_redesign(destination_root: Path, palette_root: Path) -> dict[str, object]:
     records: list[dict[str, object]] = []
     total_changed_pixels = 0
 
@@ -167,6 +237,7 @@ def apply_player_redesign(destination_root: Path) -> dict[str, object]:
                 }
             )
 
+    runtime_palettes = _redesign_brendan_runtime_palettes(palette_root)
     return {
         "style": "v1.4 Hoenn field uniforms: gold/red Brendan and white/red/blue May",
         "identity_policy": "Brendan and May identities and all native Emerald action sheets are preserved.",
@@ -174,6 +245,7 @@ def apply_player_redesign(destination_root: Path) -> dict[str, object]:
         "files_checked": len(records),
         "files_changed": sum(record["changed_pixels"] > 0 for record in records),
         "total_changed_pixels": total_changed_pixels,
+        "runtime_palettes": runtime_palettes,
         "records": records,
     }
 
@@ -214,7 +286,10 @@ def import_overworld_sprites(project: Path, assets_root: Path) -> dict[str, obje
         shutil.copy2(source, destination)
         copied.append(relative.as_posix())
 
-    player_redesign = apply_player_redesign(destination_root)
+    player_redesign = apply_player_redesign(
+        destination_root,
+        project / "graphics/object_events/palettes",
+    )
 
     field_effect = project / "src/field_effect.c"
     text = field_effect.read_text(encoding="utf-8")
@@ -245,7 +320,7 @@ def import_overworld_sprites(project: Path, assets_root: Path) -> dict[str, obje
         "skipped_dimension_mismatch_count": len(skipped_dimension_mismatch),
         "skipped_dimension_mismatch": skipped_dimension_mismatch,
         "fly_animation_alignment_patched": True,
-        "palette_strategy": "Shared GBA palettes preserved; player clothing receives a deterministic v1.4 redesign.",
+        "palette_strategy": "Shared NPC palettes are preserved; Brendan's runtime and reflection palettes match the deterministic v1.4 field uniform.",
         "player_redesign": player_redesign,
     }
     (project / f"overworld_import_{release_tag()}.json").write_text(

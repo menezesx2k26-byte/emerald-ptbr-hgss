@@ -17,6 +17,17 @@ EXPECTED_CASES = (
     (4, "petalburg_woods", 18, 28),
 )
 
+PLAYER_SAMPLE_BOXES = {
+    1: (104, 52, 136, 100),
+    2: (56, 52, 88, 100),
+    3: (104, 44, 136, 92),
+    4: (86, 56, 118, 104),
+}
+
+
+def _has_near_color(colors: list[tuple[int, int, int]], target: tuple[int, int, int], tolerance: int = 5) -> bool:
+    return any(all(abs(left - right) <= tolerance for left, right in zip(color, target)) for color in colors)
+
 
 def validate(raw_report: Path, screenshots: Path) -> dict[str, object]:
     raw = json.loads(raw_report.read_text(encoding="utf-8"))
@@ -36,6 +47,7 @@ def validate(raw_report: Path, screenshots: Path) -> dict[str, object]:
     screenshot_hashes: list[str] = []
     screenshot_records: list[dict[str, object]] = []
     program_counters = True
+    player_palette_visible = True
     for case_id, name, x, y in EXPECTED_CASES:
         sample = by_case.get(case_id)
         if sample is None:
@@ -43,6 +55,7 @@ def validate(raw_report: Path, screenshots: Path) -> dict[str, object]:
             video_memory = False
             screenshots_valid = False
             program_counters = False
+            player_palette_visible = False
             continue
         case_metadata = case_metadata and (
             sample.get("name") == name
@@ -67,7 +80,13 @@ def validate(raw_report: Path, screenshots: Path) -> dict[str, object]:
             with Image.open(path) as image:
                 image.load()
                 width, height = image.size
-                colors = len(image.convert("RGB").getcolors(maxcolors=width * height) or [])
+                rgb = image.convert("RGB")
+                colors = len(rgb.getcolors(maxcolors=width * height) or [])
+                player_colors = [color for _, color in rgb.crop(PLAYER_SAMPLE_BOXES[case_id]).getcolors(maxcolors=4096) or []]
+                player_palette_visible = player_palette_visible and (
+                    _has_near_color(player_colors, (255, 198, 49))
+                    and _has_near_color(player_colors, (198, 66, 66))
+                )
             digest = hashlib.sha256(path.read_bytes()).hexdigest()
             screenshot_hashes.append(digest)
             screenshots_valid = screenshots_valid and (width, height) == (240, 160) and colors >= 20
@@ -101,6 +120,7 @@ def validate(raw_report: Path, screenshots: Path) -> dict[str, object]:
         ),
         "screenshots_are_valid": screenshots_valid,
         "screenshots_are_distinct": len(screenshot_hashes) == 4 and len(set(screenshot_hashes)) == 4,
+        "brendan_v14_palette_visible": player_palette_visible,
         "program_counter_valid": program_counters,
     }
     return {

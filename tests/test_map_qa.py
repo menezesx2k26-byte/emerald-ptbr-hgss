@@ -21,7 +21,7 @@ from instrument_map_qa import (  # noqa: E402
 from compose_map_qa_sheet import compose  # noqa: E402
 from patch_mgba_headless_video import MARKER as MGBA_VIDEO_MARKER, patch_source  # noqa: E402
 from release import release_version  # noqa: E402
-from validate_map_qa import EXPECTED_CASES, validate  # noqa: E402
+from validate_map_qa import EXPECTED_CASES, PLAYER_SAMPLE_BOXES, validate  # noqa: E402
 
 
 MAIN_FIXTURE = '''#include "global.h"
@@ -58,6 +58,9 @@ def make_raw_report(path: Path, screenshots: Path) -> None:
         for color in range(24):
             for py in range(160):
                 image.putpixel((color, py), ((color * 8) % 256, case_id * 30, (color * 11) % 256))
+        player_box = PLAYER_SAMPLE_BOXES[case_id]
+        image.putpixel((player_box[0], player_box[1]), (255, 198, 49))
+        image.putpixel((player_box[0] + 1, player_box[1]), (198, 66, 66))
         image.save(screenshots / filename)
         samples.append({
             "case": case_id,
@@ -186,6 +189,22 @@ argsExit:
             report = validate(raw, root)
             self.assertFalse(report["valid"])
             self.assertFalse(report["checks"]["screenshots_are_distinct"])
+
+    def test_rejects_legacy_player_palette_in_runtime_capture(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            raw = root / "raw.json"
+            make_raw_report(raw, root)
+            data = json.loads(raw.read_text(encoding="utf-8"))
+            first = root / data["case_samples"][0]["screenshot"]
+            with Image.open(first) as source:
+                image = source.convert("RGB")
+            box = PLAYER_SAMPLE_BOXES[1]
+            image.putpixel((box[0], box[1]), (74, 148, 82))
+            image.save(first)
+            report = validate(raw, root)
+            self.assertFalse(report["valid"])
+            self.assertFalse(report["checks"]["brendan_v14_palette_visible"])
 
 
 if __name__ == "__main__":
