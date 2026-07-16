@@ -142,7 +142,7 @@ ROUTE101_FIXES = (
 STARTER_CATEGORY_FIXES = (
     CategoryFix("NATIONAL_DEX_TREECKO", "LAGARTIXA"),
     CategoryFix("NATIONAL_DEX_TORCHIC", "PINTINHO"),
-    CategoryFix("NATIONAL_DEX_MUDKIP", "PEIXE DE LAMA"),
+    CategoryFix("NATIONAL_DEX_MUDKIP", "PEIXE-LAMA"),
 )
 
 
@@ -215,6 +215,8 @@ def category_pattern(species: str) -> re.Pattern[str]:
 
 
 def apply_category_fix(project: Path, fix: CategoryFix) -> dict[str, object]:
+    if len(fix.category) > 11:
+        raise ValueError(f"Category too long for PokedexEntry.categoryName[12]: {fix.category}")
     path = project / "src/data/pokemon/pokedex_entries.h"
     text = path.read_text(encoding="utf-8")
     pattern = category_pattern(fix.species)
